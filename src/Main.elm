@@ -8,17 +8,31 @@ module Main exposing (..)
 
 import Browser
 import Browser.Navigation
-import Html exposing (Html, a, button, div, text)
-import Html.Attributes exposing (href)
+import Html exposing (Html, button, div, text)
 import Html.Events exposing (onClick)
-import Url
-import Url.Parser exposing ((</>), (<?>), Parser, int, map, oneOf, s, string)
+import Http exposing (Error(..))
+import Json.Decode exposing (Decoder, field, list, map2, string)
+import Url exposing (Protocol(..))
+
+
+apiKey =
+    "0fc0a5a1dd4723f1e621672ea7ae8b97"
+
+
+apiBaseUrl =
+    "https://trello.com/1"
+
+
+boardId =
+    "LR3ShJNh"
+
+
+listName =
+    "Projects"
 
 
 
 -- MAIN
---main =
---Browser.sandbox { init = init, update = update, view = view }
 
 
 main =
@@ -33,60 +47,167 @@ main =
 
 
 
---{ init : flags -> Url -> Key -> ( model, Cmd msg )
---, update : msg -> model -> ( model, Cmd msg )
---}
-
-
-
----> Program flags model msg
 -- MODEL
 
 
-type alias Model =
-    { token : Maybe String
-    }
+type Model
+    = Unauthorized
+    | FragmentError String
+    | Token String
+    | ListsGetError String
+    | LoadingList String
+    | FindListError String
+    | CardsGetError String
+    | CardNames (List String)
 
 
-init : () -> Url.Url -> Browser.Navigation.Key -> ( Model, Cmd msg )
+init : () -> Url.Url -> Browser.Navigation.Key -> ( Model, Cmd Msg )
 init _ url _ =
-    case url.fragment of
-        Just routFrag ->
-            ( Model (Just routFrag), Cmd.none )
+    url.fragment
+        |> Maybe.map
+            (\frag ->
+                case String.split "=" frag |> parseTokenFromFragment of
+                    Ok token ->
+                        ( Token token, getLists apiKey token boardId )
 
-        Nothing ->
-            ( Model Nothing, Cmd.none )
+                    Err err ->
+                        ( FragmentError err, Cmd.none )
+            )
+        |> Maybe.withDefault ( Unauthorized, Cmd.none )
 
 
+type alias FragmentError =
+    String
 
---Url.Parser.fragment
---url.fragment
---( 100, Cmd.none )
--- UPDATE
+
+parseTokenFromFragment : List String -> Result FragmentError String
+parseTokenFromFragment segments =
+    case segments of
+        [] ->
+            Ok "hiyer"
+
+        [ tokenKey, token ] ->
+            if tokenKey == "token" then
+                Ok token
+
+            else
+                Err "First key of first fragment pair was not 'token'"
+
+        _ ->
+            Err "Fragments were not in expected format"
 
 
 type Msg
     = Never
     | Authorize
+      -- tidy this up, bad that it's just strings
+    | GetLists String String String
+    | ListsReceived String String (Result Http.Error Lists)
+    | CardsReceived String String (Result Http.Error Cards)
 
 
-update : Msg -> Model -> ( Model, Cmd msg )
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        Authorize ->
-            ( model, Browser.Navigation.load "https://trello.com/1/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=0fc0a5a1dd4723f1e621672ea7ae8b97&return_url=http://localhost:8000" )
-
         Never ->
             ( model, Cmd.none )
 
+        Authorize ->
+            ( model
+            , Browser.Navigation.load
+                (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=" ++ apiKey ++ "&return_url=http://localhost:8000")
+            )
 
-type alias RouteWithFragment =
-    ( String, Maybe String )
+        GetLists key token id ->
+            ( model, getLists key token id )
+
+        ListsReceived key token result ->
+            case result of
+                Err httpErr ->
+                    ( ListsGetError "Error getting boards", Cmd.none )
+
+                Ok lists ->
+                    let
+                        projectLists =
+                            List.filter (\l -> l.name == listName) lists
+                    in
+                    case projectLists of
+                        [] ->
+                            ( FindListError "No list found with the project name", Cmd.none )
+
+                        [ list ] ->
+                            ( LoadingList list.id, getCards key token list.id )
+
+                        _ ->
+                            ( FindListError "Too many lists found with the project name", Cmd.none )
+
+        CardsReceived key token result ->
+            case result of
+                Err httpErr ->
+                    ( CardsGetError "Error getting cards", Cmd.none )
+
+                Ok cards ->
+                    ( CardNames (List.map (\c -> c.name) cards), Cmd.none )
 
 
-urlParser : Parser (RouteWithFragment -> a) a
-urlParser =
-    map Tuple.pair (string </> Url.Parser.fragment identity)
+getLists : String -> String -> String -> Cmd Msg
+getLists key token localBoardId =
+    Http.get
+        { url = apiBaseUrl ++ "/boards/" ++ localBoardId ++ "/lists?key=" ++ key ++ "&token=" ++ token
+        , expect = Http.expectJson (ListsReceived key token) listsDecoder
+        }
+
+
+getCards : String -> String -> String -> Cmd Msg
+getCards key token listId =
+    Http.get
+        { url = apiBaseUrl ++ "/lists/" ++ listId ++ "/cards?key=" ++ key ++ "&token=" ++ token
+        , expect = Http.expectJson (CardsReceived key token) cardsDecoder
+        }
+
+
+type alias Lists =
+    List TList
+
+
+type alias TList =
+    { id : String
+    , name : String
+    }
+
+
+listsDecoder : Decoder Lists
+listsDecoder =
+    list listDecoder
+
+
+listDecoder : Decoder TList
+listDecoder =
+    map2 TList
+        (field "id" string)
+        (field "name" string)
+
+
+type alias Cards =
+    List Card
+
+
+type alias Card =
+    { id : String
+    , name : String
+    }
+
+
+cardsDecoder : Decoder Cards
+cardsDecoder =
+    list cardDecoder
+
+
+cardDecoder : Decoder Card
+cardDecoder =
+    map2 Card
+        (field "id" string)
+        (field "name" string)
 
 
 
@@ -98,10 +219,29 @@ view model =
     Browser.Document "Next Actions"
         [ div
             []
-            [ model.token
-                |> Maybe.map
-                    (\token -> div [] [ text token ])
-                |> Maybe.withDefault
-                    (button [ onClick Authorize ] [ text "Authorize" ])
+            [ case model of
+                Unauthorized ->
+                    button [ onClick Authorize ] [ text "Authorize" ]
+
+                Token token ->
+                    div [] [ text <| apiBaseUrl ++ "/boards/" ++ boardId ++ "/lists?key=" ++ apiKey ++ "&token=" ++ token ]
+
+                FragmentError err ->
+                    div [] [ text err ]
+
+                ListsGetError err ->
+                    div [] [ text err ]
+
+                LoadingList listId ->
+                    div [] [ text listId ]
+
+                FindListError err ->
+                    div [] [ text err ]
+
+                CardsGetError err ->
+                    div [] [ text err ]
+
+                CardNames names ->
+                    div [] (List.map (\n -> div [] [ text n ]) names)
             ]
         ]
