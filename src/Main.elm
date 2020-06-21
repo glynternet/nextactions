@@ -7,7 +7,7 @@ import Html exposing (Html, br, button, div, text)
 import Html.Attributes exposing (class)
 import Html.Events exposing (onClick)
 import Http exposing (Error(..))
-import Json.Decode as Decode exposing (Decoder, field, list, map2, string)
+import Json.Decode as Decode exposing (Decoder, field, float, list, map2, map3, string)
 import Url exposing (Protocol(..))
 
 
@@ -48,13 +48,14 @@ main =
 
 type Model
     = Unauthorized
+    | Error String
     | FragmentError String
-    | Token String
+    | GettingBoardLists
     | ListsGetError String
-    | LoadingList String
+    | GettingListCards String
     | FindListError String
     | CardsGetError String
-    | CardChecklists Cards (Dict String Checklists)
+    | Items Cards (Dict String Checklists) (Dict String Checkitems)
 
 
 init : () -> Url.Url -> Browser.Navigation.Key -> ( Model, Cmd Msg )
@@ -64,7 +65,7 @@ init _ url _ =
             (\frag ->
                 case String.split "=" frag |> parseTokenFromFragment of
                     Ok token ->
-                        ( Token token, getLists (RequestCredentials apiKey token) boardId )
+                        ( GettingBoardLists, getLists (RequestCredentials apiKey token) boardId )
 
                     Err err ->
                         ( FragmentError err, Cmd.none )
@@ -80,7 +81,7 @@ parseTokenFromFragment : List String -> Result FragmentError String
 parseTokenFromFragment segments =
     case segments of
         [] ->
-            Ok "hiyer"
+            Err "No fragment segments to get token from"
 
         [ tokenKey, token ] ->
             if tokenKey == "token" then
@@ -99,7 +100,8 @@ type Msg
     | GetLists RequestCredentials String
     | ListsReceived RequestCredentials (Result Http.Error Lists)
     | CardsReceived RequestCredentials (Result Http.Error Cards)
-    | ChecklistsReceived String (Result Http.Error Checklists)
+    | ChecklistsReceived RequestCredentials String (Result Http.Error Checklists)
+    | CheckitemsReceived String (Result Http.Error Checkitems)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -120,7 +122,7 @@ update msg model =
         ListsReceived credentials result ->
             case result of
                 Err httpErr ->
-                    ( ListsGetError "Error getting boards", Cmd.none )
+                    ( ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
 
                 Ok lists ->
                     let
@@ -132,7 +134,7 @@ update msg model =
                             ( FindListError "No list found with the project name", Cmd.none )
 
                         [ list ] ->
-                            ( LoadingList list.id, getCards credentials list.id )
+                            ( GettingListCards list.id, getCards credentials list.id )
 
                         _ ->
                             ( FindListError "Too many lists found with the project name", Cmd.none )
@@ -143,23 +145,39 @@ update msg model =
                     ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
 
                 Ok cards ->
-                    ( CardChecklists cards Dict.empty
+                    ( Items cards Dict.empty Dict.empty
                     , Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
                     )
 
-        ChecklistsReceived cardId result ->
+        ChecklistsReceived credentials cardId result ->
             case model of
-                CardChecklists cards cls ->
+                Items cards checklists checkitems ->
                     case Debug.log ("Received: " ++ cardId) result of
                         Ok newChecklists ->
-                            ( CardChecklists cards (Dict.insert cardId newChecklists cls), Cmd.none )
+                            ( Items cards (Dict.insert cardId newChecklists checklists) checkitems
+                            , Cmd.batch (List.map (\cl -> getCheckitems credentials cl.id) newChecklists)
+                            )
 
                         Err error ->
-                            ( model, Cmd.none )
+                            ( Error <| httpErrToString error, Cmd.none )
 
                 _ ->
-                    -- TODO: add unexpected error state?
-                    ( model, Cmd.none )
+                    ( Error "Received checklists whilst in unexpected state", Cmd.none )
+
+        CheckitemsReceived checklistId result ->
+            case model of
+                Items cards checklists checkitems ->
+                    case Debug.log ("Received: " ++ checklistId) result of
+                        Ok newCheckitems ->
+                            ( Items cards checklists (Dict.insert checklistId newCheckitems checkitems)
+                            , Cmd.none
+                            )
+
+                        Err error ->
+                            ( Error <| "Error getting checkitems for checklist with ID:" ++ checklistId ++ " " ++ httpErrToString error, Cmd.none )
+
+                _ ->
+                    ( Error "Received checkitems whilst in unexpected state", Cmd.none )
 
 
 getLists : RequestCredentials -> String -> Cmd Msg
@@ -182,8 +200,16 @@ getChecklists : RequestCredentials -> String -> Cmd Msg
 getChecklists credentials cardId =
     getItems credentials
         ("/cards/" ++ cardId ++ "/checklists")
-        (ChecklistsReceived cardId)
+        (ChecklistsReceived credentials cardId)
         checklistsDecoder
+
+
+getCheckitems : RequestCredentials -> String -> Cmd Msg
+getCheckitems credentials checklistId =
+    getItems credentials
+        ("/checklists/" ++ checklistId ++ "/checkItems")
+        (CheckitemsReceived checklistId)
+        checkitemsDecoder
 
 
 cretentialsParams : RequestCredentials -> String
@@ -271,6 +297,30 @@ checklistDecoder =
         (field "name" string)
 
 
+type alias Checkitems =
+    List Checkitem
+
+
+type alias Checkitem =
+    { pos : Float
+    , name : String
+    , state : String
+    }
+
+
+checkitemsDecoder : Decoder Checkitems
+checkitemsDecoder =
+    list checkitemDecoder
+
+
+checkitemDecoder : Decoder Checkitem
+checkitemDecoder =
+    map3 Checkitem
+        (field "pos" float)
+        (field "name" string)
+        (field "state" string)
+
+
 
 -- VIEW
 
@@ -281,11 +331,14 @@ view model =
         [ div
             []
             [ case model of
+                Error err ->
+                    div [] [ text err ]
+
                 Unauthorized ->
                     button [ onClick Authorize ] [ text "Authorize" ]
 
-                Token token ->
-                    div [] [ text <| apiBaseUrl ++ "/boards/" ++ boardId ++ "/lists?key=" ++ apiKey ++ "&token=" ++ token ]
+                GettingBoardLists ->
+                    div [] [ text <| "Loading..." ]
 
                 FragmentError err ->
                     div [] [ text err ]
@@ -293,8 +346,8 @@ view model =
                 ListsGetError err ->
                     div [] [ text err ]
 
-                LoadingList listId ->
-                    div [] [ text listId ]
+                GettingListCards listId ->
+                    div [] [ text <| "Loading list... " ++ listId ]
 
                 FindListError err ->
                     div [] [ text err ]
@@ -302,7 +355,7 @@ view model =
                 CardsGetError err ->
                     div [] [ text err ]
 
-                CardChecklists cards cardChecklists ->
+                Items cards cardChecklists checklistitems ->
                     div []
                         (List.map
                             (\c ->
@@ -312,15 +365,32 @@ view model =
                                     , Dict.get c.id cardChecklists
                                         |> Maybe.map
                                             (\cls ->
-                                                case List.length (List.filter (\cl -> cl.name == "Actions") cls) of
-                                                    0 ->
-                                                        "No actions list"
+                                                -- if single checklist called Checklist or if Actions
+                                                case cls of
+                                                    [] ->
+                                                        "Card contains no checklists"
 
-                                                    1 ->
-                                                        "Yes"
+                                                    --case List.length (List.filter (\cl -> cl.name == "Actions") cls) of
+                                                    [ cl ] ->
+                                                        if List.member cl.name [ "Checklist", "Actions", "ToDo" ] then
+                                                            Dict.get cl.id checklistitems
+                                                                |> Maybe.map
+                                                                    (\clis ->
+                                                                        case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") clis of
+                                                                            first :: rest ->
+                                                                                first.name ++ " (plus " ++ (String.fromInt <| List.length rest) ++ " others)"
+
+                                                                            _ ->
+                                                                                "No incomplete items"
+                                                                    )
+                                                                |> Maybe.withDefault
+                                                                    ("No checkitems found for checklist with id: " ++ cl.id)
+
+                                                        else
+                                                            "Single checklist title was not one of the keyword ones"
 
                                                     _ ->
-                                                        "Too many actions lists"
+                                                        "More than 1 checklist, need to filter for Actions"
                                             )
                                         |> Maybe.withDefault "Loading...?"
                                         |> text
