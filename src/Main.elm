@@ -3,7 +3,7 @@ module Main exposing (..)
 import Browser
 import Browser.Navigation
 import Dict exposing (Dict)
-import Html exposing (Html, br, button, div, text)
+import Html exposing (Html, br, button, div, span, text)
 import Html.Attributes exposing (class)
 import Html.Events exposing (onClick)
 import Http exposing (Error(..))
@@ -364,7 +364,7 @@ view model =
                                                 -- if single checklist called Checklist or if Actions
                                                 case cls of
                                                     [] ->
-                                                        "Card contains no checklists"
+                                                        text "Card contains no checklists"
 
                                                     --case List.length (List.filter (\cl -> cl.name == "Actions") cls) of
                                                     [ cl ] ->
@@ -374,22 +374,24 @@ view model =
                                                                     (\clis ->
                                                                         case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") clis of
                                                                             first :: rest ->
-                                                                                first.name ++ " (plus " ++ (String.fromInt <| List.length rest) ++ " others)"
+                                                                                span []
+                                                                                    [ text <| first.name
+                                                                                    , span [ class "smallTag" ] [ text ("+" ++ (String.fromInt <| List.length rest)) ]
+                                                                                    ]
 
                                                                             _ ->
-                                                                                "No incomplete items"
+                                                                                text "No incomplete items"
                                                                     )
                                                                 |> Maybe.withDefault
-                                                                    ("No checkitems found for checklist with id: " ++ cl.id)
+                                                                    (text <| "No checkitems found for checklist with id: " ++ cl.id)
 
                                                         else
-                                                            "Single checklist title was not one of the keyword ones"
+                                                            text "Single checklist title was not one of the keyword ones"
 
                                                     _ ->
-                                                        "More than 1 checklist, need to filter for Actions"
+                                                        text "More than 1 checklist, need to filter for Actions"
                                             )
-                                        |> Maybe.withDefault "Loading...?"
-                                        |> text
+                                        |> Maybe.withDefault (text "Loading...?")
                                     ]
                             )
                             cards
