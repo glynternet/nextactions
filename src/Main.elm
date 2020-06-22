@@ -49,7 +49,6 @@ main =
 type Model
     = Unauthorized
     | Error String
-    | FragmentError String
     | GettingBoardLists
     | ListsGetError String
     | GettingListCards String
@@ -68,7 +67,7 @@ init _ url _ =
                         ( GettingBoardLists, getLists (RequestCredentials apiKey token) boardId )
 
                     Err err ->
-                        ( FragmentError err, Cmd.none )
+                        ( Error err, Cmd.none )
             )
         |> Maybe.withDefault ( Unauthorized, Cmd.none )
 
@@ -339,9 +338,6 @@ view model =
 
                 GettingBoardLists ->
                     div [] [ text <| "Loading..." ]
-
-                FragmentError err ->
-                    div [] [ text err ]
 
                 ListsGetError err ->
                     div [] [ text err ]
