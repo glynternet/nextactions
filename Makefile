@@ -2,6 +2,8 @@ ROOT_DIR ?= $(shell git rev-parse --show-toplevel)
 UNTRACKED ?= $(shell test -z "$(shell git ls-files --others --exclude-standard "$(ROOT_DIR)")" || echo -untracked)
 VERSION ?= $(shell git describe --tags --dirty --always)$(UNTRACKED)
 
+IMAGE_NAME ?= glynhanmer/nextactions
+
 BUILD_DIR ?= ./build/$(VERSION)
 
 $(BUILD_DIR):
@@ -27,9 +29,9 @@ build: $(BUILD_DIR) $(SRC_COPIES) elm.js
 image: build
 	docker build \
 		"--build-arg=BUILD_DIR=$(BUILD_DIR)" \
-		--tag glynhanmer/physasgdjasdasdio:$(VERSION) \
+		--tag $(IMAGE_NAME):$(VERSION) \
 		.
 
 push-image: image
-	docker push glynhanmer/phasdasdadysio:$(VERSION)
+	docker push $(IMAGE_NAME):$(VERSION)
 
