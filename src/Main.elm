@@ -7,7 +7,7 @@ import Html exposing (Html, br, button, div, span, text)
 import Html.Attributes exposing (class)
 import Html.Events exposing (onClick)
 import Http exposing (Error(..))
-import Json.Decode as Decode exposing (Decoder, field, float, list, map2, map3, string)
+import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, string)
 import Url exposing (Protocol(..))
 
 
@@ -41,7 +41,7 @@ type alias Model =
 
 
 type Runtime
-    = Unauthorized APIKey
+    = Unauthorized APIKey String
     | Error String
     | GettingBoardLists
     | ListsGetError String
@@ -55,7 +55,17 @@ type alias Config =
     { apiKey : String
     , boardId : String
     , listName : String
+    , loginRedirect : String
     }
+
+
+configDecoder : Decoder Config
+configDecoder =
+    map4 Config
+        (field "apiKey" string)
+        (field "boardId" string)
+        (field "listName" string)
+        (field "loginRedirect" string)
 
 
 type alias BoardID =
@@ -66,28 +76,31 @@ type alias APIKey =
     String
 
 
-init : ( String, String, String ) -> Url.Url -> Browser.Navigation.Key -> ( Model, Cmd Msg )
-init ( apikey, boardId, listName ) url _ =
-    let
-        config =
-            Config apikey boardId listName
-    in
-    url.fragment
-        |> Maybe.map
-            (\frag ->
-                case String.split "=" frag |> parseTokenFromFragment of
-                    Ok token ->
-                        ( Model config GettingBoardLists
-                        , getLists (RequestCredentials config.apiKey token) config.boardId
-                        )
+init : Value -> Url.Url -> Browser.Navigation.Key -> ( Model, Cmd Msg )
+init configValue url _ =
+    case decodeValue configDecoder configValue of
+        Ok config ->
+            url.fragment
+                |> Maybe.map
+                    (\frag ->
+                        case String.split "=" frag |> parseTokenFromFragment of
+                            Ok token ->
+                                ( Model config GettingBoardLists
+                                , getLists (RequestCredentials config.apiKey token) config.boardId
+                                )
 
-                    Err err ->
-                        ( Model config <| Error err
-                        , Cmd.none
-                        )
-            )
-        |> Maybe.withDefault
-            ( Model config <| Unauthorized config.apiKey
+                            Err err ->
+                                ( Model config <| Error err
+                                , Cmd.none
+                                )
+                    )
+                |> Maybe.withDefault
+                    ( Model config <| Unauthorized config.apiKey config.loginRedirect
+                    , Cmd.none
+                    )
+
+        Err err ->
+            ( Model (Config "" "" "" "") (Error <| "Error decoding the init config: " ++ errorToString err)
             , Cmd.none
             )
 
@@ -115,7 +128,7 @@ parseTokenFromFragment segments =
 
 type Msg
     = Never
-    | Authorize APIKey
+    | Authorize APIKey String
     | GetLists RequestCredentials String
     | ListsReceived RequestCredentials (Result Http.Error Lists)
     | CardsReceived RequestCredentials (Result Http.Error Cards)
@@ -129,10 +142,10 @@ update msg model =
         Never ->
             ( model, Cmd.none )
 
-        Authorize apiKey ->
+        Authorize apiKey redirectURL ->
             ( model
             , Browser.Navigation.load
-                (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=" ++ apiKey ++ "&return_url=http://localhost:8000")
+                (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=" ++ apiKey ++ "&return_url=" ++ redirectURL)
             )
 
         GetLists credentials id ->
@@ -353,8 +366,8 @@ view model =
                 Error err ->
                     div [] [ text err ]
 
-                Unauthorized apiKey ->
-                    button [ onClick <| Authorize apiKey ] [ text "Authorize" ]
+                Unauthorized apiKey redirectURL ->
+                    button [ onClick <| Authorize apiKey redirectURL ] [ text "Authorize" ]
 
                 GettingBoardLists ->
                     div [] [ text <| "Loading..." ]
