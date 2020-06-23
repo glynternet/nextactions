@@ -413,7 +413,7 @@ view model =
                                                                                     ]
 
                                                                             _ ->
-                                                                                text "No incomplete items"
+                                                                                text "You are complete :)"
                                                                     )
                                                                 |> Maybe.withDefault
                                                                     (text <| "No checkitems found for checklist with id: " ++ cl.id)
