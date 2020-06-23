@@ -43,10 +43,10 @@
 <body>
 <script>var app = Elm.Main.init({
     flags: {
-      apiKey: "0fc0a5a1dd4723f1e621672ea7ae8b97",
-      boardId: "LR3ShJNh",
-      listName: "Projects",
-      loginRedirect: "http://localhost:8000"
+      apiKey: {{API_KEY}},
+      boardId: {{BOARD_ID}},
+      listName: {{LIST_NAME}},
+      loginRedirect: {{LOGIN_REDIRECT}}
     }
   });</script>
 </body>

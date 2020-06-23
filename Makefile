@@ -11,11 +11,11 @@ $(BUILD_DIR):
 
 SRC_DIR ?= ./src
 
-elm-live:
-	elm-live $(SRC_DIR)/Main.elm --open --start-page=$(SRC_DIR)/index.html -- --output=elm.js
+elm-live: index.html
+	elm-live $(SRC_DIR)/Main.elm --open --start-page=$(BUILD_DIR)/index.html -- --output=elm.js
 
 
-SRC_COPIES ?= index.html manifest.json
+SRC_COPIES ?= manifest.json
 $(SRC_COPIES):
 	cp -v "$(SRC_DIR)/$@" "$(BUILD_DIR)/"
 
@@ -24,7 +24,19 @@ $(SRC_COPIES):
 elm.js:
 	elm make $(SRC_DIR)/Main.elm --output=$(BUILD_DIR)/$@
 
-build: $(BUILD_DIR) $(SRC_COPIES) elm.js
+API_KEY ?= "0fc0a5a1dd4723f1e621672ea7ae8b97"
+BOARD_ID ?= "LR3ShJNh"
+LIST_NAME ?= "Projects"
+LOGIN_REDIRECT ?= "http://localhost:8000"
+
+index.html:
+	sed 's@{{API_KEY}}@$(API_KEY)@g' $(SRC_DIR)/index.html.template \
+	| sed 's@{{BOARD_ID}}@$(BOARD_ID)@g' \
+	| sed 's@{{LIST_NAME}}@$(LIST_NAME)@g' \
+	| sed 's@{{LOGIN_REDIRECT}}@$(LOGIN_REDIRECT)@g' \
+	> $(BUILD_DIR)/index.html
+
+build: $(BUILD_DIR) $(SRC_COPIES) elm.js index.html
 
 image: build
 	docker build \
