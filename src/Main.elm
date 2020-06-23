@@ -11,20 +11,8 @@ import Json.Decode as Decode exposing (Decoder, field, float, list, map2, map3, 
 import Url exposing (Protocol(..))
 
 
-apiKey =
-    "0fc0a5a1dd4723f1e621672ea7ae8b97"
-
-
 apiBaseUrl =
     "https://trello.com/1"
-
-
-boardId =
-    "LR3ShJNh"
-
-
-listName =
-    "Projects"
 
 
 
@@ -46,8 +34,14 @@ main =
 -- MODEL
 
 
-type Model
-    = Unauthorized
+type alias Model =
+    { config : Config
+    , runtimeModel : Runtime
+    }
+
+
+type Runtime
+    = Unauthorized APIKey
     | Error String
     | GettingBoardLists
     | ListsGetError String
@@ -57,19 +51,45 @@ type Model
     | Items Cards (Dict String Checklists) (Dict String Checkitems)
 
 
-init : () -> Url.Url -> Browser.Navigation.Key -> ( Model, Cmd Msg )
-init _ url _ =
+type alias Config =
+    { apiKey : String
+    , boardId : String
+    , listName : String
+    }
+
+
+type alias BoardID =
+    String
+
+
+type alias APIKey =
+    String
+
+
+init : ( String, String, String ) -> Url.Url -> Browser.Navigation.Key -> ( Model, Cmd Msg )
+init ( apikey, boardId, listName ) url _ =
+    let
+        config =
+            Config apikey boardId listName
+    in
     url.fragment
         |> Maybe.map
             (\frag ->
                 case String.split "=" frag |> parseTokenFromFragment of
                     Ok token ->
-                        ( GettingBoardLists, getLists (RequestCredentials apiKey token) boardId )
+                        ( Model config GettingBoardLists
+                        , getLists (RequestCredentials config.apiKey token) config.boardId
+                        )
 
                     Err err ->
-                        ( Error err, Cmd.none )
+                        ( Model config <| Error err
+                        , Cmd.none
+                        )
             )
-        |> Maybe.withDefault ( Unauthorized, Cmd.none )
+        |> Maybe.withDefault
+            ( Model config <| Unauthorized config.apiKey
+            , Cmd.none
+            )
 
 
 type alias FragmentError =
@@ -95,7 +115,7 @@ parseTokenFromFragment segments =
 
 type Msg
     = Never
-    | Authorize
+    | Authorize APIKey
     | GetLists RequestCredentials String
     | ListsReceived RequestCredentials (Result Http.Error Lists)
     | CardsReceived RequestCredentials (Result Http.Error Cards)
@@ -109,7 +129,7 @@ update msg model =
         Never ->
             ( model, Cmd.none )
 
-        Authorize ->
+        Authorize apiKey ->
             ( model
             , Browser.Navigation.load
                 (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=" ++ apiKey ++ "&return_url=http://localhost:8000")
@@ -121,62 +141,62 @@ update msg model =
         ListsReceived credentials result ->
             case result of
                 Err httpErr ->
-                    ( ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
+                    ( Model model.config <| ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
 
                 Ok lists ->
                     let
                         projectLists =
-                            List.filter (\l -> l.name == listName) lists
+                            List.filter (\l -> l.name == model.config.listName) lists
                     in
                     case projectLists of
                         [] ->
-                            ( FindListError "No list found with the project name", Cmd.none )
+                            ( Model model.config <| FindListError "No list found with the project name", Cmd.none )
 
                         [ list ] ->
-                            ( GettingListCards list.id, getCards credentials list.id )
+                            ( Model model.config <| GettingListCards list.id, getCards credentials list.id )
 
                         _ ->
-                            ( FindListError "Too many lists found with the project name", Cmd.none )
+                            ( Model model.config <| FindListError "Too many lists found with the project name", Cmd.none )
 
         CardsReceived credentials result ->
             case result of
                 Err httpErr ->
-                    ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
+                    ( Model model.config <| CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
 
                 Ok cards ->
-                    ( Items cards Dict.empty Dict.empty
+                    ( Model model.config <| Items cards Dict.empty Dict.empty
                     , Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
                     )
 
         ChecklistsReceived credentials cardId result ->
-            case model of
+            case model.runtimeModel of
                 Items cards checklists checkitems ->
                     case Debug.log ("Received: " ++ cardId) result of
                         Ok newChecklists ->
-                            ( Items cards (Dict.insert cardId newChecklists checklists) checkitems
+                            ( Model model.config <| Items cards (Dict.insert cardId newChecklists checklists) checkitems
                             , Cmd.batch (List.map (\cl -> getCheckitems credentials cl.id) newChecklists)
                             )
 
                         Err error ->
-                            ( Error <| httpErrToString error, Cmd.none )
+                            ( Model model.config <| Error <| httpErrToString error, Cmd.none )
 
                 _ ->
-                    ( Error "Received checklists whilst in unexpected state", Cmd.none )
+                    ( Model model.config <| Error "Received checklists whilst in unexpected state", Cmd.none )
 
         CheckitemsReceived checklistId result ->
-            case model of
+            case model.runtimeModel of
                 Items cards checklists checkitems ->
                     case Debug.log ("Received: " ++ checklistId) result of
                         Ok newCheckitems ->
-                            ( Items cards checklists (Dict.insert checklistId newCheckitems checkitems)
+                            ( Model model.config <| Items cards checklists (Dict.insert checklistId newCheckitems checkitems)
                             , Cmd.none
                             )
 
                         Err error ->
-                            ( Error <| "Error getting checkitems for checklist with ID:" ++ checklistId ++ " " ++ httpErrToString error, Cmd.none )
+                            ( Model model.config <| Error <| "Error getting checkitems for checklist with ID:" ++ checklistId ++ " " ++ httpErrToString error, Cmd.none )
 
                 _ ->
-                    ( Error "Received checkitems whilst in unexpected state", Cmd.none )
+                    ( Model model.config <| Error "Received checkitems whilst in unexpected state", Cmd.none )
 
 
 getLists : RequestCredentials -> String -> Cmd Msg
@@ -329,12 +349,12 @@ view model =
     Browser.Document "Next Actions"
         [ div
             []
-            [ case model of
+            [ case model.runtimeModel of
                 Error err ->
                     div [] [ text err ]
 
-                Unauthorized ->
-                    button [ onClick Authorize ] [ text "Authorize" ]
+                Unauthorized apiKey ->
+                    button [ onClick <| Authorize apiKey ] [ text "Authorize" ]
 
                 GettingBoardLists ->
                     div [] [ text <| "Loading..." ]
