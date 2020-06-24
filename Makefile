@@ -21,7 +21,7 @@ $(SRC_COPIES):
 
 # phony because elm-live produces this and I can't work out how to produce to to another path and still work in dev mode.
 .PHONY: elm.js
-elm.js:
+elm.js: $(BUILD_DIR)
 	elm make $(SRC_DIR)/Main.elm --output=$(BUILD_DIR)/$@
 
 API_KEY ?= "0fc0a5a1dd4723f1e621672ea7ae8b97"
@@ -29,7 +29,7 @@ BOARD_ID ?= "LR3ShJNh"
 LIST_NAME ?= "Projects"
 LOGIN_REDIRECT ?= "https://glynternet.com:8082"
 
-index.html:
+index.html: $(BUILD_DIR)
 	sed 's@{{API_KEY}}@$(API_KEY)@g' $(SRC_DIR)/index.html.template \
 	| sed 's@{{BOARD_ID}}@$(BOARD_ID)@g' \
 	| sed 's@{{LIST_NAME}}@$(LIST_NAME)@g' \
