@@ -220,15 +220,15 @@ getChecklists credentials cardId =
         checklistsDecoder
 
 
-cretentialsParams : RequestCredentials -> String
-cretentialsParams credentials =
+credentialsParams : RequestCredentials -> String
+credentialsParams credentials =
     "key=" ++ credentials.key ++ "&token=" ++ credentials.token
 
 
 getItems : RequestCredentials -> String -> (Result Error a -> Msg) -> Decode.Decoder a -> Cmd Msg
 getItems credentials endpoint toMsg decoder =
     Http.get
-        { url = apiBaseUrl ++ endpoint ++ "?" ++ cretentialsParams credentials
+        { url = apiBaseUrl ++ endpoint ++ "?" ++ credentialsParams credentials
         , expect = Http.expectJson toMsg decoder
         }
 
@@ -349,8 +349,8 @@ type alias IncompleteNextActions =
     }
 
 
-checklistItermsToNextActions : Checkitems -> NextActions
-checklistItermsToNextActions items =
+checklistItemsToNextActions : Checkitems -> NextActions
+checklistItemsToNextActions items =
     case items of
         [] ->
             EmptyList
@@ -379,14 +379,11 @@ checklistsToNextActionsResult cls =
 
         _ ->
             case List.filter (\cl -> List.member cl.name [ "Checklist", "Actions", "ToDo" ]) cls of
-                --if  then
-                --                checklistItermsToNextActions cl.checkItems
-                --                    |> NextActions
                 [] ->
                     NoActionsChecklists
 
                 [ cl ] ->
-                    checklistItermsToNextActions cl.checkItems
+                    checklistItemsToNextActions cl.checkItems
                         |> NextActions
 
                 candidates ->
