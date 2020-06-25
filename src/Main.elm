@@ -353,6 +353,21 @@ checkitemDecoder =
         (field "state" string)
 
 
+type NextActions
+    = Complete
+    | Incomplete String Int
+
+
+checklistItermsToNextActions : Checkitems -> NextActions
+checklistItermsToNextActions items =
+    case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") items of
+        first :: rest ->
+            Incomplete first.name <| List.length rest
+
+        _ ->
+            Complete
+
+
 
 -- VIEW
 
@@ -401,16 +416,17 @@ view model =
                                                 [ cl ] ->
                                                     if List.member cl.name [ "Checklist", "Actions", "ToDo" ] then
                                                         Dict.get cl.id checklistitems
+                                                            |> Maybe.map checklistItermsToNextActions
                                                             |> Maybe.map
-                                                                (\clis ->
-                                                                    case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") clis of
-                                                                        first :: rest ->
+                                                                (\nas ->
+                                                                    case nas of
+                                                                        Incomplete name incompleteCount ->
                                                                             span []
-                                                                                [ text <| first.name
-                                                                                , span [ class "smallTag" ] [ text ("+" ++ (String.fromInt <| List.length rest)) ]
+                                                                                [ text <| name
+                                                                                , span [ class "smallTag" ] [ text ("+" ++ (String.fromInt <| incompleteCount)) ]
                                                                                 ]
 
-                                                                        _ ->
+                                                                        Complete ->
                                                                             text "\u{1F92A} You are complete"
                                                                 )
                                                             |> Maybe.withDefault
