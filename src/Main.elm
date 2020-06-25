@@ -481,17 +481,19 @@ view model =
                                                     Backlogged ->
                                                         7
                             )
-                        |> List.map
+                        |> List.filterMap
                             (\( name, maybeNas ) ->
-                                div [ class "projectCard" ] <|
-                                    List.append
-                                        [ text name
-                                        , br [] []
-                                        ]
-                                        (maybeNas
-                                            |> Maybe.map
-                                                (\res ->
-                                                    case res of
+                                maybeNas
+                                    |> Maybe.map
+                                        (\res ->
+                                            div
+                                                [ class "projectCard" ]
+                                            <|
+                                                List.append
+                                                    [ text name
+                                                    , br [] []
+                                                    ]
+                                                    (case res of
                                                         NoChecklists ->
                                                             [ text "️😖 card contains no action lists" ]
 
@@ -526,8 +528,7 @@ view model =
 
                                                                 Backlogged ->
                                                                     [ text <| "😌 not started" ]
-                                                )
-                                            |> Maybe.withDefault [ text "Loading...?" ]
+                                                    )
                                         )
                             )
         ]
