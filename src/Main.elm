@@ -48,7 +48,7 @@ type Runtime
     | GettingListCards String
     | FindListError String
     | CardsGetError String
-    | Items Cards (Dict String Checklists) (Dict String Checkitems)
+    | Items Cards (Dict String Checklists)
 
 
 type alias Config =
@@ -132,8 +132,7 @@ type Msg
     | GetLists RequestCredentials String
     | ListsReceived RequestCredentials (Result Http.Error Lists)
     | CardsReceived RequestCredentials (Result Http.Error Cards)
-    | ChecklistsReceived RequestCredentials String (Result Http.Error Checklists)
-    | CheckitemsReceived String (Result Http.Error Checkitems)
+    | ChecklistsReceived String (Result Http.Error Checklists)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -177,17 +176,17 @@ update msg model =
                     ( Model model.config <| CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
 
                 Ok cards ->
-                    ( Model model.config <| Items cards Dict.empty Dict.empty
+                    ( Model model.config <| Items cards Dict.empty
                     , Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
                     )
 
-        ChecklistsReceived credentials cardId result ->
+        ChecklistsReceived cardId result ->
             case model.runtimeModel of
-                Items cards checklists checkitems ->
+                Items cards checklists ->
                     case Debug.log ("Received: " ++ cardId) result of
                         Ok newChecklists ->
-                            ( Model model.config <| Items cards (Dict.insert cardId newChecklists checklists) checkitems
-                            , Cmd.batch (List.map (\cl -> getCheckitems credentials cl.id) newChecklists)
+                            ( Model model.config <| Items cards (Dict.insert cardId newChecklists checklists)
+                            , Cmd.none
                             )
 
                         Err error ->
@@ -195,21 +194,6 @@ update msg model =
 
                 _ ->
                     ( Model model.config <| Error "Received checklists whilst in unexpected state", Cmd.none )
-
-        CheckitemsReceived checklistId result ->
-            case model.runtimeModel of
-                Items cards checklists checkitems ->
-                    case Debug.log ("Received: " ++ checklistId) result of
-                        Ok newCheckitems ->
-                            ( Model model.config <| Items cards checklists (Dict.insert checklistId newCheckitems checkitems)
-                            , Cmd.none
-                            )
-
-                        Err error ->
-                            ( Model model.config <| Error <| "Error getting checkitems for checklist with ID:" ++ checklistId ++ " " ++ httpErrToString error, Cmd.none )
-
-                _ ->
-                    ( Model model.config <| Error "Received checkitems whilst in unexpected state", Cmd.none )
 
 
 getLists : RequestCredentials -> String -> Cmd Msg
@@ -232,16 +216,8 @@ getChecklists : RequestCredentials -> String -> Cmd Msg
 getChecklists credentials cardId =
     getItems credentials
         ("/cards/" ++ cardId ++ "/checklists")
-        (ChecklistsReceived credentials cardId)
+        (ChecklistsReceived cardId)
         checklistsDecoder
-
-
-getCheckitems : RequestCredentials -> String -> Cmd Msg
-getCheckitems credentials checklistId =
-    getItems credentials
-        ("/checklists/" ++ checklistId ++ "/checkItems")
-        (CheckitemsReceived checklistId)
-        checkitemsDecoder
 
 
 cretentialsParams : RequestCredentials -> String
@@ -314,6 +290,7 @@ type alias Checklists =
 type alias Checklist =
     { id : String
     , name : String
+    , checkItems : Checkitems
     }
 
 
@@ -324,9 +301,10 @@ checklistsDecoder =
 
 checklistDecoder : Decoder Checklist
 checklistDecoder =
-    map2 Checklist
+    map3 Checklist
         (field "id" string)
         (field "name" string)
+        (field "checkItems" checkitemsDecoder)
 
 
 type alias Checkitems =
@@ -387,31 +365,32 @@ checklistItermsToNextActions items =
 
 
 type NextActionsResult
-    = NoActionsChecklists
-    | MultipleChecklists
-    | InvalidNamedSingleChecklist
+    = NoChecklists
+    | NoActionsChecklists
+    | TooManyActionsChecklists (List String)
     | NextActions NextActions
-    | NotFound String
 
 
-checklistsToNextActionsResult : Dict String Checkitems -> Checklists -> NextActionsResult
-checklistsToNextActionsResult checklistItems cls =
+checklistsToNextActionsResult : Checklists -> NextActionsResult
+checklistsToNextActionsResult cls =
     case cls of
         [] ->
-            NoActionsChecklists
-
-        [ cl ] ->
-            if List.member cl.name [ "Checklist", "Actions", "ToDo" ] then
-                Dict.get cl.id checklistItems
-                    |> Maybe.map checklistItermsToNextActions
-                    |> Maybe.map NextActions
-                    |> Maybe.withDefault (NotFound cl.id)
-
-            else
-                InvalidNamedSingleChecklist
+            NoChecklists
 
         _ ->
-            MultipleChecklists
+            case List.filter (\cl -> List.member cl.name [ "Checklist", "Actions", "ToDo" ]) cls of
+                --if  then
+                --                checklistItermsToNextActions cl.checkItems
+                --                    |> NextActions
+                [] ->
+                    NoActionsChecklists
+
+                [ cl ] ->
+                    checklistItermsToNextActions cl.checkItems
+                        |> NextActions
+
+                candidates ->
+                    TooManyActionsChecklists <| List.map (\cl -> cl.name) candidates
 
 
 
@@ -446,13 +425,13 @@ view model =
                 CardsGetError err ->
                     [ text err ]
 
-                Items cards cardChecklists checklistitems ->
+                Items cards cardChecklists ->
                     cards
                         |> List.map
                             (\c ->
                                 ( c.name
                                 , Dict.get c.id cardChecklists
-                                    |> Maybe.map (checklistsToNextActionsResult checklistitems)
+                                    |> Maybe.map checklistsToNextActionsResult
                                 )
                             )
                         |> List.sortBy
@@ -463,28 +442,25 @@ view model =
 
                                     Just nasRes ->
                                         case nasRes of
-                                            NotFound _ ->
+                                            NoActionsChecklists ->
                                                 1
 
-                                            InvalidNamedSingleChecklist ->
+                                            TooManyActionsChecklists _ ->
                                                 2
 
-                                            MultipleChecklists ->
+                                            NoChecklists ->
                                                 3
-
-                                            NoActionsChecklists ->
-                                                4
 
                                             NextActions nas ->
                                                 case nas of
                                                     EmptyList ->
-                                                        5
+                                                        4
 
                                                     Complete ->
-                                                        6
+                                                        5
 
                                                     Incomplete incompleteNas ->
-                                                        7 + (1 - percentComplete incompleteNas)
+                                                        6 + (1 - percentComplete incompleteNas)
                             )
                         |> List.map
                             (\( name, maybeNas ) ->
@@ -495,14 +471,14 @@ view model =
                                         |> Maybe.map
                                             (\res ->
                                                 case res of
+                                                    NoChecklists ->
+                                                        text "️😖 card contains no action lists"
+
                                                     NoActionsChecklists ->
-                                                        text "⚠️ Card contains no action lists"
+                                                        text "\u{1F9D0} no actions list for project"
 
-                                                    MultipleChecklists ->
-                                                        text "More than 1 checklist, need to filter for Actions"
-
-                                                    InvalidNamedSingleChecklist ->
-                                                        text "😕 Single checklist title was not one of the keyword ones"
+                                                    TooManyActionsChecklists names ->
+                                                        text <| "😕 more than one actions list checklist: " ++ String.join ", " names
 
                                                     NextActions nas ->
                                                         case nas of
@@ -520,13 +496,10 @@ view model =
                                                                     ]
 
                                                             Complete ->
-                                                                text "\u{1F92A} You are complete"
+                                                                text "\u{1F92A} you are complete"
 
                                                             EmptyList ->
-                                                                text <| "\u{1F9D0} Actions list contains no items"
-
-                                                    NotFound id ->
-                                                        text <| "\u{1F9D0} No checkitems found for checklist with id: " ++ id
+                                                                text <| "\u{1F9D0} actions list contains no items"
                                             )
                                         |> Maybe.withDefault (text "Loading...?")
                                     ]
