@@ -495,13 +495,13 @@ view model =
                                                     ]
                                                     (case res of
                                                         NoChecklists ->
-                                                            [ text "️😖 card contains no action lists" ]
+                                                            [ text "️😖 no lists" ]
 
                                                         NoActionsChecklists ->
-                                                            [ text "\u{1F9D0} no actions list for project" ]
+                                                            [ text "\u{1F9D0} no actions list" ]
 
                                                         TooManyActionsChecklists names ->
-                                                            [ text <| "😕 more than one actions list checklist: " ++ String.join ", " names ]
+                                                            [ text <| "😕 more than one actions list: " ++ String.join ", " names ]
 
                                                         NextActions nas ->
                                                             case nas of
@@ -521,10 +521,10 @@ view model =
                                                                     ]
 
                                                                 Complete ->
-                                                                    [ text "\u{1F92A} you are complete" ]
+                                                                    [ text "\u{1F92A} complete!" ]
 
                                                                 EmptyList ->
-                                                                    [ text <| "\u{1F9D0} actions list contains no items" ]
+                                                                    [ text <| "\u{1F9D0} actions list has no items" ]
 
                                                                 Backlogged ->
                                                                     [ text <| "😌 not started" ]
