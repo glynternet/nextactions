@@ -355,8 +355,20 @@ checkitemDecoder =
 
 type NextActions
     = Complete
-    | Incomplete String Int
+    | Incomplete IncompleteNextActions
     | EmptyList
+
+
+percentComplete : IncompleteNextActions -> Float
+percentComplete nextActions =
+    1 - toFloat nextActions.incomplete / toFloat nextActions.total
+
+
+type alias IncompleteNextActions =
+    { nextAction : String
+    , total : Int
+    , incomplete : Int
+    }
 
 
 checklistItermsToNextActions : Checkitems -> NextActions
@@ -368,7 +380,7 @@ checklistItermsToNextActions items =
         _ ->
             case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") items of
                 first :: rest ->
-                    Incomplete first.name <| List.length rest
+                    Incomplete <| IncompleteNextActions first.name (List.length items) (List.length <| first :: rest)
 
                 _ ->
                     Complete
@@ -449,8 +461,8 @@ view model =
                                     Nothing ->
                                         0
 
-                                    Just nas ->
-                                        case nas of
+                                    Just nasRes ->
+                                        case nasRes of
                                             NotFound _ ->
                                                 1
 
@@ -463,8 +475,16 @@ view model =
                                             NoActionsChecklists ->
                                                 4
 
-                                            NextActions _ ->
-                                                5
+                                            NextActions nas ->
+                                                case nas of
+                                                    EmptyList ->
+                                                        5
+
+                                                    Complete ->
+                                                        6
+
+                                                    Incomplete incompleteNas ->
+                                                        7 + (1 - percentComplete incompleteNas)
                             )
                         |> List.map
                             (\( name, maybeNas ) ->
@@ -486,16 +506,16 @@ view model =
 
                                                     NextActions nas ->
                                                         case nas of
-                                                            Incomplete nextActionName incompleteCount ->
+                                                            Incomplete incompleteActions ->
                                                                 span [] <|
-                                                                    [ text <| nextActionName
+                                                                    [ text <| incompleteActions.nextAction
                                                                     , span [ class "smallTag" ]
                                                                         [ text <|
-                                                                            if incompleteCount == 0 then
+                                                                            if incompleteActions.incomplete == 1 then
                                                                                 "✨ last one! ✨"
 
                                                                             else
-                                                                                "+" ++ (String.fromInt <| incompleteCount)
+                                                                                "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
                                                                         ]
                                                                     ]
 
