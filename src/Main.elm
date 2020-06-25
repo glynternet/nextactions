@@ -490,7 +490,7 @@ view model =
                                                 [ class "projectCard" ]
                                             <|
                                                 List.append
-                                                    [ text name
+                                                    [ span [ class "projectTitle" ] [ text <| name ]
                                                     , br [] []
                                                     ]
                                                     (case res of

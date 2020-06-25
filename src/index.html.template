@@ -25,6 +25,10 @@
       border-radius: 5px;
       box-shadow: 3px 3px 1px #888888;
     }
+    div.projectCard span.projectTitle {
+      font-size: smaller;
+      color: #74737a;
+    }
     span.smallTag {
       vertical-align: middle;
       background-color: #ededed;
