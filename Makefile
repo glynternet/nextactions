@@ -27,7 +27,7 @@ elm.js: $(BUILD_DIR)
 API_KEY ?= "0fc0a5a1dd4723f1e621672ea7ae8b97"
 BOARD_ID ?= "LR3ShJNh"
 LIST_NAME ?= "Projects"
-LOGIN_REDIRECT ?= "https://glynternet.com:8082"
+LOGIN_REDIRECT ?= "http://localhost:8000"
 
 index.html: $(BUILD_DIR)
 	sed 's@{{API_KEY}}@$(API_KEY)@g' $(SRC_DIR)/index.html.template \
