@@ -427,9 +427,16 @@ view model =
                                                                 (\nas ->
                                                                     case nas of
                                                                         Incomplete name incompleteCount ->
-                                                                            span []
+                                                                            span [] <|
                                                                                 [ text <| name
-                                                                                , span [ class "smallTag" ] [ text ("+" ++ (String.fromInt <| incompleteCount)) ]
+                                                                                , span [ class "smallTag" ]
+                                                                                    [ text <|
+                                                                                        if incompleteCount == 0 then
+                                                                                            "✨ last one! ✨"
+
+                                                                                        else
+                                                                                            "+" ++ (String.fromInt <| incompleteCount)
+                                                                                    ]
                                                                                 ]
 
                                                                         Complete ->
@@ -437,7 +444,7 @@ view model =
 
                                                                         EmptyList ->
                                                                             text <| "\u{1F9D0} Actions list contains no items"
-                                                                                                                                            )
+                                                                )
                                                             |> Maybe.withDefault
                                                                 (text <| "\u{1F9D0} No checkitems found for checklist with id: " ++ cl.id)
 
