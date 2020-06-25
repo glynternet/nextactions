@@ -36,6 +36,14 @@
       margin: 4px;
       box-shadow: 1px 1px 1px #888888;
     }
+    div.progress {
+      background-color: #ededed;
+      height: 6px;
+    }
+    div.progress div[role=progressbar] {
+      height: 6px;
+      background-color: #b2dfeb;
+    }
     /*#f1faee*/
     /*e63946*/
     /*1d3557*/

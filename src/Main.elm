@@ -1,5 +1,6 @@
 module Main exposing (..)
 
+import Bootstrap.Progress as Progress
 import Browser
 import Browser.Navigation
 import Dict exposing (Dict)
@@ -183,7 +184,7 @@ update msg model =
         ChecklistsReceived cardId result ->
             case model.runtimeModel of
                 Items cards checklists ->
-                    case Debug.log ("Received: " ++ cardId) result of
+                    case result of
                         Ok newChecklists ->
                             ( Model model.config <| Items cards (Dict.insert cardId newChecklists checklists)
                             , Cmd.none
@@ -333,16 +334,22 @@ checkitemDecoder =
 
 type NextActions
     = Complete
-    | Incomplete IncompleteNextActions
+    | InProgress InProgressActions
+    | Backlogged
     | EmptyList
 
 
-percentComplete : IncompleteNextActions -> Float
-percentComplete nextActions =
+completeNormalisedPercent : InProgressActions -> Float
+completeNormalisedPercent nextActions =
     1 - toFloat nextActions.incomplete / toFloat nextActions.total
 
 
-type alias IncompleteNextActions =
+completePercent : InProgressActions -> Float
+completePercent nextActions =
+    completeNormalisedPercent nextActions * 100
+
+
+type alias InProgressActions =
     { nextAction : String
     , total : Int
     , incomplete : Int
@@ -357,11 +364,23 @@ checklistItemsToNextActions items =
 
         _ ->
             case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") items of
-                first :: rest ->
-                    Incomplete <| IncompleteNextActions first.name (List.length items) (List.length <| first :: rest)
-
-                _ ->
+                [] ->
                     Complete
+
+                first :: rest ->
+                    let
+                        incompletesLength =
+                            List.length (first :: rest)
+
+                        itemsLength =
+                            List.length items
+                    in
+                    if incompletesLength == itemsLength then
+                        Backlogged
+
+                    else
+                        InProgress <|
+                            InProgressActions first.name itemsLength incompletesLength
 
 
 type NextActionsResult
@@ -456,50 +475,60 @@ view model =
                                                     Complete ->
                                                         5
 
-                                                    Incomplete incompleteNas ->
-                                                        6 + (1 - percentComplete incompleteNas)
+                                                    InProgress incompleteNas ->
+                                                        6 + (1 - completeNormalisedPercent incompleteNas)
+
+                                                    Backlogged ->
+                                                        7
                             )
                         |> List.map
                             (\( name, maybeNas ) ->
-                                div [ class "projectCard" ]
-                                    [ text name
-                                    , br [] []
-                                    , maybeNas
-                                        |> Maybe.map
-                                            (\res ->
-                                                case res of
-                                                    NoChecklists ->
-                                                        text "️😖 card contains no action lists"
+                                div [ class "projectCard" ] <|
+                                    List.append
+                                        [ text name
+                                        , br [] []
+                                        ]
+                                        (maybeNas
+                                            |> Maybe.map
+                                                (\res ->
+                                                    case res of
+                                                        NoChecklists ->
+                                                            [ text "️😖 card contains no action lists" ]
 
-                                                    NoActionsChecklists ->
-                                                        text "\u{1F9D0} no actions list for project"
+                                                        NoActionsChecklists ->
+                                                            [ text "\u{1F9D0} no actions list for project" ]
 
-                                                    TooManyActionsChecklists names ->
-                                                        text <| "😕 more than one actions list checklist: " ++ String.join ", " names
+                                                        TooManyActionsChecklists names ->
+                                                            [ text <| "😕 more than one actions list checklist: " ++ String.join ", " names ]
 
-                                                    NextActions nas ->
-                                                        case nas of
-                                                            Incomplete incompleteActions ->
-                                                                span [] <|
-                                                                    [ text <| incompleteActions.nextAction
-                                                                    , span [ class "smallTag" ]
-                                                                        [ text <|
-                                                                            if incompleteActions.incomplete == 1 then
-                                                                                "✨ last one! ✨"
+                                                        NextActions nas ->
+                                                            case nas of
+                                                                InProgress incompleteActions ->
+                                                                    [ span [] <|
+                                                                        [ text <| incompleteActions.nextAction
+                                                                        , span [ class "smallTag" ]
+                                                                            [ text <|
+                                                                                if incompleteActions.incomplete == 1 then
+                                                                                    "✨ last one! ✨"
 
-                                                                            else
-                                                                                "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
+                                                                                else
+                                                                                    "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
+                                                                            ]
                                                                         ]
+                                                                    , Progress.progress [ Progress.value <| completePercent incompleteActions ]
                                                                     ]
 
-                                                            Complete ->
-                                                                text "\u{1F92A} you are complete"
+                                                                Complete ->
+                                                                    [ text "\u{1F92A} you are complete" ]
 
-                                                            EmptyList ->
-                                                                text <| "\u{1F9D0} actions list contains no items"
-                                            )
-                                        |> Maybe.withDefault (text "Loading...?")
-                                    ]
+                                                                EmptyList ->
+                                                                    [ text <| "\u{1F9D0} actions list contains no items" ]
+
+                                                                Backlogged ->
+                                                                    [ text <| "😌 not started" ]
+                                                )
+                                            |> Maybe.withDefault [ text "Loading...?" ]
+                                        )
                             )
         ]
 
