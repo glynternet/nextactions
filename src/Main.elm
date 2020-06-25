@@ -394,12 +394,10 @@ view model =
                                     , Dict.get c.id cardChecklists
                                         |> Maybe.map
                                             (\cls ->
-                                                -- if single checklist called Checklist or if Actions
                                                 case cls of
                                                     [] ->
-                                                        text "Card contains no checklists"
+                                                        text "⚠️ Card contains no action lists"
 
-                                                    --case List.length (List.filter (\cl -> cl.name == "Actions") cls) of
                                                     [ cl ] ->
                                                         if List.member cl.name [ "Checklist", "Actions", "ToDo" ] then
                                                             Dict.get cl.id checklistitems
@@ -413,13 +411,13 @@ view model =
                                                                                     ]
 
                                                                             _ ->
-                                                                                text "You are complete :)"
+                                                                                text "🤪 You are complete"
                                                                     )
                                                                 |> Maybe.withDefault
-                                                                    (text <| "No checkitems found for checklist with id: " ++ cl.id)
+                                                                    (text <| "🧐 No checkitems found for checklist with id: " ++ cl.id)
 
                                                         else
-                                                            text "Single checklist title was not one of the keyword ones"
+                                                            text "😕 Single checklist title was not one of the keyword ones"
 
                                                     _ ->
                                                         text "More than 1 checklist, need to filter for Actions"
