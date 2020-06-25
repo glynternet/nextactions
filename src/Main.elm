@@ -374,6 +374,34 @@ checklistItermsToNextActions items =
                     Complete
 
 
+type NextActionsResult
+    = NoActionsChecklists
+    | MultipleChecklists
+    | InvalidNamedSingleChecklist
+    | NextActions NextActions
+    | NotFound String
+
+
+checklistsToNextActionsResult : Dict String Checkitems -> Checklists -> NextActionsResult
+checklistsToNextActionsResult checklistItems cls =
+    case cls of
+        [] ->
+            NoActionsChecklists
+
+        [ cl ] ->
+            if List.member cl.name [ "Checklist", "Actions", "ToDo" ] then
+                Dict.get cl.id checklistItems
+                    |> Maybe.map checklistItermsToNextActions
+                    |> Maybe.map NextActions
+                    |> Maybe.withDefault (NotFound cl.id)
+
+            else
+                InvalidNamedSingleChecklist
+
+        _ ->
+            MultipleChecklists
+
+
 
 -- VIEW
 
@@ -413,46 +441,42 @@ view model =
                                 [ text c.name
                                 , br [] []
                                 , Dict.get c.id cardChecklists
+                                    |> Maybe.map (checklistsToNextActionsResult checklistitems)
                                     |> Maybe.map
-                                        (\cls ->
-                                            case cls of
-                                                [] ->
+                                        (\res ->
+                                            case res of
+                                                NoActionsChecklists ->
                                                     text "⚠️ Card contains no action lists"
 
-                                                [ cl ] ->
-                                                    if List.member cl.name [ "Checklist", "Actions", "ToDo" ] then
-                                                        Dict.get cl.id checklistitems
-                                                            |> Maybe.map checklistItermsToNextActions
-                                                            |> Maybe.map
-                                                                (\nas ->
-                                                                    case nas of
-                                                                        Incomplete name incompleteCount ->
-                                                                            span [] <|
-                                                                                [ text <| name
-                                                                                , span [ class "smallTag" ]
-                                                                                    [ text <|
-                                                                                        if incompleteCount == 0 then
-                                                                                            "✨ last one! ✨"
-
-                                                                                        else
-                                                                                            "+" ++ (String.fromInt <| incompleteCount)
-                                                                                    ]
-                                                                                ]
-
-                                                                        Complete ->
-                                                                            text "\u{1F92A} You are complete"
-
-                                                                        EmptyList ->
-                                                                            text <| "\u{1F9D0} Actions list contains no items"
-                                                                )
-                                                            |> Maybe.withDefault
-                                                                (text <| "\u{1F9D0} No checkitems found for checklist with id: " ++ cl.id)
-
-                                                    else
-                                                        text "😕 Single checklist title was not one of the keyword ones"
-
-                                                _ ->
+                                                MultipleChecklists ->
                                                     text "More than 1 checklist, need to filter for Actions"
+
+                                                InvalidNamedSingleChecklist ->
+                                                    text "😕 Single checklist title was not one of the keyword ones"
+
+                                                NextActions nas ->
+                                                    case nas of
+                                                        Incomplete name incompleteCount ->
+                                                            span [] <|
+                                                                [ text <| name
+                                                                , span [ class "smallTag" ]
+                                                                    [ text <|
+                                                                        if incompleteCount == 0 then
+                                                                            "✨ last one! ✨"
+
+                                                                        else
+                                                                            "+" ++ (String.fromInt <| incompleteCount)
+                                                                    ]
+                                                                ]
+
+                                                        Complete ->
+                                                            text "\u{1F92A} You are complete"
+
+                                                        EmptyList ->
+                                                            text <| "\u{1F9D0} Actions list contains no items"
+
+                                                NotFound id ->
+                                                    text <| "\u{1F9D0} No checkitems found for checklist with id: " ++ id
                                         )
                                     |> Maybe.withDefault (text "Loading...?")
                                 ]
