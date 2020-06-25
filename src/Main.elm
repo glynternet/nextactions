@@ -356,16 +356,22 @@ checkitemDecoder =
 type NextActions
     = Complete
     | Incomplete String Int
+    | EmptyList
 
 
 checklistItermsToNextActions : Checkitems -> NextActions
 checklistItermsToNextActions items =
-    case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") items of
-        first :: rest ->
-            Incomplete first.name <| List.length rest
+    case items of
+        [] ->
+            EmptyList
 
         _ ->
-            Complete
+            case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") items of
+                first :: rest ->
+                    Incomplete first.name <| List.length rest
+
+                _ ->
+                    Complete
 
 
 
@@ -428,7 +434,10 @@ view model =
 
                                                                         Complete ->
                                                                             text "\u{1F92A} You are complete"
-                                                                )
+
+                                                                        EmptyList ->
+                                                                            text <| "\u{1F9D0} Actions list contains no items"
+                                                                                                                                            )
                                                             |> Maybe.withDefault
                                                                 (text <| "\u{1F9D0} No checkitems found for checklist with id: " ++ cl.id)
 
