@@ -362,72 +362,70 @@ view model =
     Browser.Document "Next Actions"
         [ div
             []
-            [ case model.runtimeModel of
+          <|
+            case model.runtimeModel of
                 Error err ->
-                    div [] [ text err ]
+                    [ text err ]
 
                 Unauthorized apiKey redirectURL ->
-                    button [ onClick <| Authorize apiKey redirectURL ] [ text "Authorize" ]
+                    [ button [ onClick <| Authorize apiKey redirectURL ] [ text "Authorize" ] ]
 
                 GettingBoardLists ->
-                    div [] [ text <| "Loading..." ]
+                    [ text <| "Loading..." ]
 
                 ListsGetError err ->
-                    div [] [ text err ]
+                    [ text err ]
 
                 GettingListCards listId ->
-                    div [] [ text <| "Loading list... " ++ listId ]
+                    [ text <| "Loading list... " ++ listId ]
 
                 FindListError err ->
-                    div [] [ text err ]
+                    [ text err ]
 
                 CardsGetError err ->
-                    div [] [ text err ]
+                    [ text err ]
 
                 Items cards cardChecklists checklistitems ->
-                    div []
-                        (List.map
-                            (\c ->
-                                div [ class "projectCard" ]
-                                    [ text c.name
-                                    , br [] []
-                                    , Dict.get c.id cardChecklists
-                                        |> Maybe.map
-                                            (\cls ->
-                                                case cls of
-                                                    [] ->
-                                                        text "⚠️ Card contains no action lists"
+                    List.map
+                        (\c ->
+                            div [ class "projectCard" ]
+                                [ text c.name
+                                , br [] []
+                                , Dict.get c.id cardChecklists
+                                    |> Maybe.map
+                                        (\cls ->
+                                            case cls of
+                                                [] ->
+                                                    text "⚠️ Card contains no action lists"
 
-                                                    [ cl ] ->
-                                                        if List.member cl.name [ "Checklist", "Actions", "ToDo" ] then
-                                                            Dict.get cl.id checklistitems
-                                                                |> Maybe.map
-                                                                    (\clis ->
-                                                                        case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") clis of
-                                                                            first :: rest ->
-                                                                                span []
-                                                                                    [ text <| first.name
-                                                                                    , span [ class "smallTag" ] [ text ("+" ++ (String.fromInt <| List.length rest)) ]
-                                                                                    ]
+                                                [ cl ] ->
+                                                    if List.member cl.name [ "Checklist", "Actions", "ToDo" ] then
+                                                        Dict.get cl.id checklistitems
+                                                            |> Maybe.map
+                                                                (\clis ->
+                                                                    case List.sortBy (\cli -> cli.pos) <| List.filter (\cli -> cli.state == "incomplete") clis of
+                                                                        first :: rest ->
+                                                                            span []
+                                                                                [ text <| first.name
+                                                                                , span [ class "smallTag" ] [ text ("+" ++ (String.fromInt <| List.length rest)) ]
+                                                                                ]
 
-                                                                            _ ->
-                                                                                text "🤪 You are complete"
-                                                                    )
-                                                                |> Maybe.withDefault
-                                                                    (text <| "🧐 No checkitems found for checklist with id: " ++ cl.id)
+                                                                        _ ->
+                                                                            text "\u{1F92A} You are complete"
+                                                                )
+                                                            |> Maybe.withDefault
+                                                                (text <| "\u{1F9D0} No checkitems found for checklist with id: " ++ cl.id)
 
-                                                        else
-                                                            text "😕 Single checklist title was not one of the keyword ones"
+                                                    else
+                                                        text "😕 Single checklist title was not one of the keyword ones"
 
-                                                    _ ->
-                                                        text "More than 1 checklist, need to filter for Actions"
-                                            )
-                                        |> Maybe.withDefault (text "Loading...?")
-                                    ]
-                            )
-                            cards
+                                                _ ->
+                                                    text "More than 1 checklist, need to filter for Actions"
+                                        )
+                                    |> Maybe.withDefault (text "Loading...?")
+                                ]
                         )
-            ]
+                        cards
         ]
 
 
