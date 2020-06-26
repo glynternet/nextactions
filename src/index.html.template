@@ -60,7 +60,6 @@
     flags: {
       apiKey: {{API_KEY}},
       boardId: {{BOARD_ID}},
-      listName: {{LIST_NAME}},
       loginRedirect: {{LOGIN_REDIRECT}}
     }
   });</script>

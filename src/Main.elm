@@ -55,14 +55,14 @@ type alias AuthorizedRuntime =
 
 type alias AuthorizedRuntimeConfig =
     { boardId : String
-    , listName : String
     }
 
 
 type AuthorizedRuntimeState
     = GettingBoardLists
     | ListsGetError String
-    | GettingListCards String
+    | SelectingList Lists
+    | GettingListCards
     | FindListError String
     | CardsGetError String
     | Items Cards (Dict String Checklists)
@@ -71,17 +71,15 @@ type AuthorizedRuntimeState
 type alias Config =
     { apiKey : String
     , boardId : String
-    , listName : String
     , loginRedirect : String
     }
 
 
 configDecoder : Decoder Config
 configDecoder =
-    map4 Config
+    map3 Config
         (field "apiKey" string)
         (field "boardId" string)
-        (field "listName" string)
         (field "loginRedirect" string)
 
 
@@ -106,7 +104,7 @@ init configValue url _ =
                                     credentials =
                                         RequestCredentials config.apiKey token
                                 in
-                                ( Model <| (Authorized <| AuthorizedRuntime credentials (AuthorizedRuntimeConfig config.boardId config.listName) <| GettingBoardLists)
+                                ( Model <| (Authorized <| AuthorizedRuntime credentials (AuthorizedRuntimeConfig config.boardId) <| GettingBoardLists)
                                 , getLists credentials config.boardId
                                 )
 
@@ -152,6 +150,7 @@ type Msg
     | Authorize APIKey String
     | GetLists RequestCredentials String
     | ListsReceived RequestCredentials (Result Http.Error Lists)
+    | ListSelected RequestCredentials String
     | CardsReceived RequestCredentials (Result Http.Error Cards)
     | ChecklistsReceived String (Result Http.Error Checklists)
 
@@ -206,19 +205,11 @@ authorizedRuntimeUpdate msg runtime =
                         ( ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
 
                     Ok lists ->
-                        let
-                            projectLists =
-                                List.filter (\l -> l.name == runtime.config.listName) lists
-                        in
-                        case projectLists of
-                            [] ->
-                                ( FindListError "No list found with the project name", Cmd.none )
+                        ( SelectingList lists, Cmd.none )
 
-                            [ list ] ->
-                                ( GettingListCards list.id, getCards credentials list.id )
-
-                            _ ->
-                                ( FindListError "Too many lists found with the project name", Cmd.none )
+        ListSelected credentials listId ->
+            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+                ( GettingListCards, getCards credentials listId )
 
         CardsReceived credentials result ->
             (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
@@ -491,8 +482,11 @@ viewAuthorized runtime =
         ListsGetError err ->
             [ text err ]
 
-        GettingListCards listId ->
-            [ text <| "Loading list... " ++ listId ]
+        SelectingList lists ->
+            List.map (\l -> button [ onClick <| ListSelected runtime.credentials l.id ] [ text l.name ]) lists
+
+        GettingListCards ->
+            [ text <| "Loading projects... " ]
 
         FindListError err ->
             [ text err ]

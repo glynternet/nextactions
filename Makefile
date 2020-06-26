@@ -32,7 +32,6 @@ LOGIN_REDIRECT ?= "https://glynternet.com:8082"
 index.html: $(BUILD_DIR)
 	sed 's@{{API_KEY}}@$(API_KEY)@g' $(SRC_DIR)/index.html.template \
 	| sed 's@{{BOARD_ID}}@$(BOARD_ID)@g' \
-	| sed 's@{{LIST_NAME}}@$(LIST_NAME)@g' \
 	| sed 's@{{LOGIN_REDIRECT}}@$(LOGIN_REDIRECT)@g' \
 	> $(BUILD_DIR)/index.html
 
