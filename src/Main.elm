@@ -453,7 +453,7 @@ checkitemDecoder =
 type NextActions
     = Complete
     | InProgress InProgressActions
-    | Backlogged
+    | Backlogged String
     | EmptyList
 
 
@@ -494,7 +494,7 @@ checklistItemsToNextActions items =
                             List.length items
                     in
                     if incompletesLength == itemsLength then
-                        Backlogged
+                        Backlogged first.name
 
                     else
                         InProgress <|
@@ -662,8 +662,8 @@ viewAuthorized runtime =
                                                         EmptyList ->
                                                             [ text <| "\u{1F9D0} actions list has no items" ]
 
-                                                        Backlogged ->
-                                                            [ text <| "😌 not started" ]
+                                                        Backlogged first ->
+                                                            [ text <| "😌 not started: " ++ first ]
                                             )
                                 )
                     )
