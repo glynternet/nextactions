@@ -41,9 +41,26 @@ type alias Model =
 
 
 type Runtime
-    = Unauthorized APIKey String
-    | Error String
-    | GettingBoardLists (TList -> Bool)
+    = Error String
+    | Unauthorized APIKey String
+    | Authorized AuthorizedRuntime
+
+
+type alias AuthorizedRuntime =
+    { credentials : RequestCredentials
+    , config : AuthorizedRuntimeConfig
+    , state : AuthorizedRuntimeState
+    }
+
+
+type alias AuthorizedRuntimeConfig =
+    { boardId : String
+    , listName : String
+    }
+
+
+type AuthorizedRuntimeState
+    = GettingBoardLists
     | ListsGetError String
     | GettingListCards String
     | FindListError String
@@ -85,8 +102,12 @@ init configValue url _ =
                     (\frag ->
                         case String.split "=" frag |> parseTokenFromFragment of
                             Ok token ->
-                                ( Model <| GettingBoardLists (\list -> list.name == config.listName)
-                                , getLists (RequestCredentials config.apiKey token) config.boardId
+                                let
+                                    credentials =
+                                        RequestCredentials config.apiKey token
+                                in
+                                ( Model <| (Authorized <| AuthorizedRuntime credentials (AuthorizedRuntimeConfig config.boardId config.listName) <| GettingBoardLists)
+                                , getLists credentials config.boardId
                                 )
 
                             Err err ->
@@ -143,6 +164,28 @@ update msg model =
 
 runtimeUpdate : Msg -> Runtime -> ( Runtime, Cmd Msg )
 runtimeUpdate msg runtime =
+    case runtime of
+        Error string ->
+            ( Error string, Cmd.none )
+
+        Unauthorized _ _ ->
+            case msg of
+                Authorize apiKey redirectURL ->
+                    ( runtime
+                    , Browser.Navigation.load
+                        (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=" ++ apiKey ++ "&return_url=" ++ redirectURL)
+                    )
+
+                _ ->
+                    ( runtime, Cmd.none )
+
+        Authorized authorizedRuntime ->
+            authorizedRuntimeUpdate msg authorizedRuntime
+                |> (\( r, cmd ) -> ( Authorized r, cmd ))
+
+
+authorizedRuntimeUpdate : Msg -> AuthorizedRuntime -> ( AuthorizedRuntime, Cmd Msg )
+authorizedRuntimeUpdate msg runtime =
     case msg of
         Never ->
             ( runtime, Cmd.none )
@@ -157,54 +200,52 @@ runtimeUpdate msg runtime =
             ( runtime, getLists credentials id )
 
         ListsReceived credentials result ->
-            case result of
-                Err httpErr ->
-                    ( ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
+            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+                case result of
+                    Err httpErr ->
+                        ( ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
 
-                Ok lists ->
-                    case runtime of
-                        GettingBoardLists filter ->
-                            let
-                                projectLists =
-                                    List.filter filter lists
-                            in
-                            case projectLists of
-                                [] ->
-                                    ( FindListError "No list found with the project name", Cmd.none )
+                    Ok lists ->
+                        let
+                            projectLists =
+                                List.filter (\l -> l.name == runtime.config.listName) lists
+                        in
+                        case projectLists of
+                            [] ->
+                                ( FindListError "No list found with the project name", Cmd.none )
 
-                                [ list ] ->
-                                    ( GettingListCards list.id, getCards credentials list.id )
+                            [ list ] ->
+                                ( GettingListCards list.id, getCards credentials list.id )
 
-                                _ ->
-                                    ( FindListError "Too many lists found with the project name", Cmd.none )
-
-                        _ ->
-                            ( Error "Received lists at unexpected time", Cmd.none )
+                            _ ->
+                                ( FindListError "Too many lists found with the project name", Cmd.none )
 
         CardsReceived credentials result ->
-            case result of
-                Err httpErr ->
-                    ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
+            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+                case result of
+                    Err httpErr ->
+                        ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
 
-                Ok cards ->
-                    ( Items cards Dict.empty
-                    , Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
-                    )
+                    Ok cards ->
+                        ( Items cards Dict.empty
+                        , Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
+                        )
 
         ChecklistsReceived cardId result ->
-            case runtime of
-                Items cards checklists ->
-                    case result of
-                        Ok newChecklists ->
-                            ( Items cards (Dict.insert cardId newChecklists checklists)
-                            , Cmd.none
-                            )
+            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+                case runtime.state of
+                    Items cards checklists ->
+                        case result of
+                            Ok newChecklists ->
+                                ( Items cards (Dict.insert cardId newChecklists checklists)
+                                , Cmd.none
+                                )
 
-                        Err error ->
-                            ( Error <| httpErrToString error, Cmd.none )
+                            Err error ->
+                                ( ListsGetError <| httpErrToString error, Cmd.none )
 
-                _ ->
-                    ( Error "Received checklists whilst in unexpected state", Cmd.none )
+                    _ ->
+                        ( ListsGetError "Received checklists at unexpected time", Cmd.none )
 
 
 getLists : RequestCredentials -> String -> Cmd Msg
@@ -436,112 +477,119 @@ view model =
                 Unauthorized apiKey redirectURL ->
                     [ button [ onClick <| Authorize apiKey redirectURL ] [ text "Authorize" ] ]
 
-                GettingBoardLists _ ->
-                    [ text <| "Loading..." ]
-
-                ListsGetError err ->
-                    [ text err ]
-
-                GettingListCards listId ->
-                    [ text <| "Loading list... " ++ listId ]
-
-                FindListError err ->
-                    [ text err ]
-
-                CardsGetError err ->
-                    [ text err ]
-
-                Items cards cardChecklists ->
-                    cards
-                        |> List.map
-                            (\c ->
-                                ( c.name
-                                , Dict.get c.id cardChecklists
-                                    |> Maybe.map checklistsToNextActionsResult
-                                )
-                            )
-                        |> List.sortBy
-                            (\( _, maybeNas ) ->
-                                case maybeNas of
-                                    Nothing ->
-                                        0
-
-                                    Just nasRes ->
-                                        case nasRes of
-                                            NoActionsChecklists ->
-                                                1
-
-                                            TooManyActionsChecklists _ ->
-                                                2
-
-                                            NoChecklists ->
-                                                3
-
-                                            NextActions nas ->
-                                                case nas of
-                                                    EmptyList ->
-                                                        4
-
-                                                    Complete ->
-                                                        5
-
-                                                    InProgress incompleteNas ->
-                                                        6 + (1 - completeNormalisedPercent incompleteNas)
-
-                                                    Backlogged ->
-                                                        7
-                            )
-                        |> List.filterMap
-                            (\( name, maybeNas ) ->
-                                maybeNas
-                                    |> Maybe.map
-                                        (\res ->
-                                            div
-                                                [ class "projectCard" ]
-                                            <|
-                                                List.append
-                                                    [ span [ class "projectTitle" ] [ text <| name ]
-                                                    , br [] []
-                                                    ]
-                                                    (case res of
-                                                        NoChecklists ->
-                                                            [ text "️😖 no lists" ]
-
-                                                        NoActionsChecklists ->
-                                                            [ text "\u{1F9D0} no actions list" ]
-
-                                                        TooManyActionsChecklists names ->
-                                                            [ text <| "😕 more than one actions list: " ++ String.join ", " names ]
-
-                                                        NextActions nas ->
-                                                            case nas of
-                                                                InProgress incompleteActions ->
-                                                                    [ span [] <|
-                                                                        [ text <| incompleteActions.nextAction
-                                                                        , span [ class "smallTag" ]
-                                                                            [ text <|
-                                                                                if incompleteActions.incomplete == 1 then
-                                                                                    "✨ last one! ✨"
-
-                                                                                else
-                                                                                    "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
-                                                                            ]
-                                                                        ]
-                                                                    , Progress.progress [ Progress.value <| completePercent incompleteActions ]
-                                                                    ]
-
-                                                                Complete ->
-                                                                    [ text "\u{1F92A} complete!" ]
-
-                                                                EmptyList ->
-                                                                    [ text <| "\u{1F9D0} actions list has no items" ]
-
-                                                                Backlogged ->
-                                                                    [ text <| "😌 not started" ]
-                                                    )
-                                        )
-                            )
+                Authorized authorizedRuntime ->
+                    viewAuthorized authorizedRuntime
         ]
+
+
+viewAuthorized : AuthorizedRuntime -> List (Html Msg)
+viewAuthorized runtime =
+    case runtime.state of
+        GettingBoardLists ->
+            [ text <| "Loading..." ]
+
+        ListsGetError err ->
+            [ text err ]
+
+        GettingListCards listId ->
+            [ text <| "Loading list... " ++ listId ]
+
+        FindListError err ->
+            [ text err ]
+
+        CardsGetError err ->
+            [ text err ]
+
+        Items cards cardChecklists ->
+            cards
+                |> List.map
+                    (\c ->
+                        ( c.name
+                        , Dict.get c.id cardChecklists
+                            |> Maybe.map checklistsToNextActionsResult
+                        )
+                    )
+                |> List.sortBy
+                    (\( _, maybeNas ) ->
+                        case maybeNas of
+                            Nothing ->
+                                0
+
+                            Just nasRes ->
+                                case nasRes of
+                                    NoActionsChecklists ->
+                                        1
+
+                                    TooManyActionsChecklists _ ->
+                                        2
+
+                                    NoChecklists ->
+                                        3
+
+                                    NextActions nas ->
+                                        case nas of
+                                            EmptyList ->
+                                                4
+
+                                            Complete ->
+                                                5
+
+                                            InProgress incompleteNas ->
+                                                6 + (1 - completeNormalisedPercent incompleteNas)
+
+                                            Backlogged ->
+                                                7
+                    )
+                |> List.filterMap
+                    (\( name, maybeNas ) ->
+                        maybeNas
+                            |> Maybe.map
+                                (\res ->
+                                    div
+                                        [ class "projectCard" ]
+                                    <|
+                                        List.append
+                                            [ span [ class "projectTitle" ] [ text <| name ]
+                                            , br [] []
+                                            ]
+                                            (case res of
+                                                NoChecklists ->
+                                                    [ text "️😖 no lists" ]
+
+                                                NoActionsChecklists ->
+                                                    [ text "\u{1F9D0} no actions list" ]
+
+                                                TooManyActionsChecklists names ->
+                                                    [ text <| "😕 more than one actions list: " ++ String.join ", " names ]
+
+                                                NextActions nas ->
+                                                    case nas of
+                                                        InProgress incompleteActions ->
+                                                            [ span [] <|
+                                                                [ text <| incompleteActions.nextAction
+                                                                , span [ class "smallTag" ]
+                                                                    [ text <|
+                                                                        if incompleteActions.incomplete == 1 then
+                                                                            "✨ last one! ✨"
+
+                                                                        else
+                                                                            "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
+                                                                    ]
+                                                                ]
+                                                            , Progress.progress [ Progress.value <| completePercent incompleteActions ]
+                                                            ]
+
+                                                        Complete ->
+                                                            [ text "\u{1F92A} complete!" ]
+
+                                                        EmptyList ->
+                                                            [ text <| "\u{1F9D0} actions list has no items" ]
+
+                                                        Backlogged ->
+                                                            [ text <| "😌 not started" ]
+                                            )
+                                )
+                    )
 
 
 httpErrToString : Http.Error -> String
