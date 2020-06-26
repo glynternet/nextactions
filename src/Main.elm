@@ -36,15 +36,14 @@ main =
 
 
 type alias Model =
-    { config : Config
-    , runtimeModel : Runtime
+    { runtimeModel : Runtime
     }
 
 
 type Runtime
     = Unauthorized APIKey String
     | Error String
-    | GettingBoardLists
+    | GettingBoardLists (TList -> Bool)
     | ListsGetError String
     | GettingListCards String
     | FindListError String
@@ -86,22 +85,22 @@ init configValue url _ =
                     (\frag ->
                         case String.split "=" frag |> parseTokenFromFragment of
                             Ok token ->
-                                ( Model config GettingBoardLists
+                                ( Model <| GettingBoardLists (\list -> list.name == config.listName)
                                 , getLists (RequestCredentials config.apiKey token) config.boardId
                                 )
 
                             Err err ->
-                                ( Model config <| Error err
+                                ( Model <| Error err
                                 , Cmd.none
                                 )
                     )
                 |> Maybe.withDefault
-                    ( Model config <| Unauthorized config.apiKey config.loginRedirect
+                    ( Model <| Unauthorized config.apiKey config.loginRedirect
                     , Cmd.none
                     )
 
         Err err ->
-            ( Model (Config "" "" "" "") (Error <| "Error decoding the init config: " ++ errorToString err)
+            ( Model (Error <| "Error decoding the init config: " ++ errorToString err)
             , Cmd.none
             )
 
@@ -154,30 +153,35 @@ update msg model =
         ListsReceived credentials result ->
             case result of
                 Err httpErr ->
-                    ( Model model.config <| ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
+                    ( Model <| ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
 
                 Ok lists ->
-                    let
-                        projectLists =
-                            List.filter (\l -> l.name == model.config.listName) lists
-                    in
-                    case projectLists of
-                        [] ->
-                            ( Model model.config <| FindListError "No list found with the project name", Cmd.none )
+                    case model.runtimeModel of
+                        GettingBoardLists filter ->
+                            let
+                                projectLists =
+                                    List.filter filter lists
+                            in
+                            case projectLists of
+                                [] ->
+                                    ( Model <| FindListError "No list found with the project name", Cmd.none )
 
-                        [ list ] ->
-                            ( Model model.config <| GettingListCards list.id, getCards credentials list.id )
+                                [ list ] ->
+                                    ( Model <| GettingListCards list.id, getCards credentials list.id )
+
+                                _ ->
+                                    ( Model <| FindListError "Too many lists found with the project name", Cmd.none )
 
                         _ ->
-                            ( Model model.config <| FindListError "Too many lists found with the project name", Cmd.none )
+                            ( Model <| Error "Received lists at unexpected time", Cmd.none )
 
         CardsReceived credentials result ->
             case result of
                 Err httpErr ->
-                    ( Model model.config <| CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
+                    ( Model <| CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
 
                 Ok cards ->
-                    ( Model model.config <| Items cards Dict.empty
+                    ( Model <| Items cards Dict.empty
                     , Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
                     )
 
@@ -186,15 +190,15 @@ update msg model =
                 Items cards checklists ->
                     case result of
                         Ok newChecklists ->
-                            ( Model model.config <| Items cards (Dict.insert cardId newChecklists checklists)
+                            ( Model <| Items cards (Dict.insert cardId newChecklists checklists)
                             , Cmd.none
                             )
 
                         Err error ->
-                            ( Model model.config <| Error <| httpErrToString error, Cmd.none )
+                            ( Model <| Error <| httpErrToString error, Cmd.none )
 
                 _ ->
-                    ( Model model.config <| Error "Received checklists whilst in unexpected state", Cmd.none )
+                    ( Model <| Error "Received checklists whilst in unexpected state", Cmd.none )
 
 
 getLists : RequestCredentials -> String -> Cmd Msg
@@ -426,7 +430,7 @@ view model =
                 Unauthorized apiKey redirectURL ->
                     [ button [ onClick <| Authorize apiKey redirectURL ] [ text "Authorize" ] ]
 
-                GettingBoardLists ->
+                GettingBoardLists _ ->
                     [ text <| "Loading..." ]
 
                 ListsGetError err ->
