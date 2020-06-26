@@ -8,7 +8,7 @@ import Html exposing (Html, br, button, div, span, text)
 import Html.Attributes exposing (class)
 import Html.Events exposing (onClick)
 import Http exposing (Error(..))
-import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, string)
+import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, map5, string)
 import Url exposing (Protocol(..))
 
 
@@ -65,7 +65,9 @@ type AuthorizedRuntimeState
     | GettingListCards
     | FindListError String
     | CardsGetError String
+    | CardGetError String
     | Items Cards (Dict String Checklists)
+    | MarkCheckitemDoneError String
 
 
 type alias Config =
@@ -149,10 +151,13 @@ type Msg
     = Never
     | Authorize APIKey String
     | GetLists RequestCredentials String
-    | ListsReceived RequestCredentials (Result Http.Error Lists)
+    | ListsReceived (Result Http.Error Lists)
     | ListSelected RequestCredentials String
     | CardsReceived RequestCredentials (Result Http.Error Cards)
+    | CardReceived (Result Http.Error Card)
     | ChecklistsReceived String (Result Http.Error Checklists)
+    | MarkCheckitemDone String String
+    | MarkCheckitemDoneResult String (Result Http.Error Checkitem)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -172,7 +177,7 @@ runtimeUpdate msg runtime =
                 Authorize apiKey redirectURL ->
                     ( runtime
                     , Browser.Navigation.load
-                        (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=" ++ apiKey ++ "&return_url=" ++ redirectURL)
+                        (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read,write&response_type=token&key=" ++ apiKey ++ "&return_url=" ++ redirectURL)
                     )
 
                 _ ->
@@ -198,7 +203,7 @@ authorizedRuntimeUpdate msg runtime =
         GetLists credentials id ->
             ( runtime, getLists credentials id )
 
-        ListsReceived credentials result ->
+        ListsReceived result ->
             (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
                 case result of
                     Err httpErr ->
@@ -222,6 +227,26 @@ authorizedRuntimeUpdate msg runtime =
                         , Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
                         )
 
+        CardReceived result ->
+            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+                case runtime.state of
+                    Items cards _ ->
+                        case result of
+                            Err httpErr ->
+                                ( CardGetError <| "Error getting card: " ++ httpErrToString httpErr, Cmd.none )
+
+                            Ok card ->
+                                if List.member card cards then
+                                    ( runtime.state
+                                    , getChecklists runtime.credentials card.id
+                                    )
+
+                                else
+                                    ( CardGetError <| "Received card is not known: " ++ card.name, Cmd.none )
+
+                    _ ->
+                        ( CardGetError "Received card at unexpected time", Cmd.none )
+
         ChecklistsReceived cardId result ->
             (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
                 case runtime.state of
@@ -238,12 +263,31 @@ authorizedRuntimeUpdate msg runtime =
                     _ ->
                         ( ListsGetError "Received checklists at unexpected time", Cmd.none )
 
+        MarkCheckitemDone cardId checkitemId ->
+            ( runtime, putMarkCheckitemAsDone runtime.credentials cardId checkitemId )
+
+        MarkCheckitemDoneResult cardId result ->
+            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+                case runtime.state of
+                    Items _ _ ->
+                        case result of
+                            Ok _ ->
+                                ( runtime.state
+                                , getCard runtime.credentials cardId
+                                )
+
+                            Err error ->
+                                ( MarkCheckitemDoneError <| httpErrToString error, Cmd.none )
+
+                    _ ->
+                        ( MarkCheckitemDoneError "MarkCheckitemDoneResult received at unexpected time", Cmd.none )
+
 
 getLists : RequestCredentials -> String -> Cmd Msg
 getLists credentials localBoardId =
     getItems credentials
         ("/boards/" ++ localBoardId ++ "/lists")
-        (ListsReceived credentials)
+        ListsReceived
         listsDecoder
 
 
@@ -253,6 +297,14 @@ getCards credentials listId =
         ("/lists/" ++ listId ++ "/cards")
         (CardsReceived credentials)
         cardsDecoder
+
+
+getCard : RequestCredentials -> String -> Cmd Msg
+getCard credentials cardId =
+    getItems credentials
+        ("/cards/" ++ cardId)
+        CardReceived
+        cardDecoder
 
 
 getChecklists : RequestCredentials -> String -> Cmd Msg
@@ -273,6 +325,28 @@ getItems credentials endpoint toMsg decoder =
     Http.get
         { url = apiBaseUrl ++ endpoint ++ "?" ++ credentialsParams credentials
         , expect = Http.expectJson toMsg decoder
+        }
+
+
+putMarkCheckitemAsDone : RequestCredentials -> String -> String -> Cmd Msg
+putMarkCheckitemAsDone credentials cardId checkitemId =
+    putItems credentials
+        ("/cards/" ++ cardId ++ "/checkItem/" ++ checkitemId)
+        [ "state=complete" ]
+        (MarkCheckitemDoneResult cardId)
+        checkitemDecoder
+
+
+putItems : RequestCredentials -> String -> List String -> (Result Error a -> Msg) -> Decode.Decoder a -> Cmd Msg
+putItems credentials endpoint params toMsg decoder =
+    Http.request
+        { method = "PUT"
+        , headers = []
+        , url = apiBaseUrl ++ endpoint ++ "?" ++ credentialsParams credentials ++ List.foldl (++) "" (List.map ((++) "&") params)
+        , body = Http.emptyBody
+        , expect = Http.expectJson toMsg decoder
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 
@@ -357,6 +431,7 @@ type alias Checkitems =
 type alias Checkitem =
     { pos : Float
     , name : String
+    , id : String
     , state : String
     }
 
@@ -368,9 +443,10 @@ checkitemsDecoder =
 
 checkitemDecoder : Decoder Checkitem
 checkitemDecoder =
-    map3 Checkitem
+    map4 Checkitem
         (field "pos" float)
         (field "name" string)
+        (field "id" string)
         (field "state" string)
 
 
@@ -392,7 +468,7 @@ completePercent nextActions =
 
 
 type alias InProgressActions =
-    { nextAction : String
+    { nextAction : Checkitem
     , total : Int
     , incomplete : Int
     }
@@ -422,7 +498,7 @@ checklistItemsToNextActions items =
 
                     else
                         InProgress <|
-                            InProgressActions first.name itemsLength incompletesLength
+                            InProgressActions first itemsLength incompletesLength
 
 
 type NextActionsResult
@@ -494,11 +570,17 @@ viewAuthorized runtime =
         CardsGetError err ->
             [ text err ]
 
+        CardGetError err ->
+            [ text err ]
+
+        MarkCheckitemDoneError err ->
+            [ text err ]
+
         Items cards cardChecklists ->
             cards
                 |> List.map
                     (\c ->
-                        ( c.name
+                        ( c
                         , Dict.get c.id cardChecklists
                             |> Maybe.map checklistsToNextActionsResult
                         )
@@ -531,11 +613,11 @@ viewAuthorized runtime =
                                             InProgress incompleteNas ->
                                                 6 + (1 - completeNormalisedPercent incompleteNas)
 
-                                            Backlogged ->
+                                            Backlogged _ ->
                                                 7
                     )
                 |> List.filterMap
-                    (\( name, maybeNas ) ->
+                    (\( card, maybeNas ) ->
                         maybeNas
                             |> Maybe.map
                                 (\res ->
@@ -543,7 +625,7 @@ viewAuthorized runtime =
                                         [ class "projectCard" ]
                                     <|
                                         List.append
-                                            [ span [ class "projectTitle" ] [ text <| name ]
+                                            [ span [ class "projectTitle" ] [ text <| card.name ]
                                             , br [] []
                                             ]
                                             (case res of
@@ -560,7 +642,7 @@ viewAuthorized runtime =
                                                     case nas of
                                                         InProgress incompleteActions ->
                                                             [ span [] <|
-                                                                [ text <| incompleteActions.nextAction
+                                                                [ text <| incompleteActions.nextAction.name
                                                                 , span [ class "smallTag" ]
                                                                     [ text <|
                                                                         if incompleteActions.incomplete == 1 then
@@ -569,6 +651,7 @@ viewAuthorized runtime =
                                                                         else
                                                                             "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
                                                                     ]
+                                                                , button [ onClick <| MarkCheckitemDone card.id incompleteActions.nextAction.id ] [ text "Next!" ]
                                                                 ]
                                                             , Progress.progress [ Progress.value <| completePercent incompleteActions ]
                                                             ]
