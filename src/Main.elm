@@ -137,26 +137,32 @@ type Msg
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    runtimeUpdate msg model.runtimeModel
+        |> (\( runtime, cmd ) -> ( Model runtime, cmd ))
+
+
+runtimeUpdate : Msg -> Runtime -> ( Runtime, Cmd Msg )
+runtimeUpdate msg runtime =
     case msg of
         Never ->
-            ( model, Cmd.none )
+            ( runtime, Cmd.none )
 
         Authorize apiKey redirectURL ->
-            ( model
+            ( runtime
             , Browser.Navigation.load
                 (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=" ++ apiKey ++ "&return_url=" ++ redirectURL)
             )
 
         GetLists credentials id ->
-            ( model, getLists credentials id )
+            ( runtime, getLists credentials id )
 
         ListsReceived credentials result ->
             case result of
                 Err httpErr ->
-                    ( Model <| ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
+                    ( ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
 
                 Ok lists ->
-                    case model.runtimeModel of
+                    case runtime of
                         GettingBoardLists filter ->
                             let
                                 projectLists =
@@ -164,41 +170,41 @@ update msg model =
                             in
                             case projectLists of
                                 [] ->
-                                    ( Model <| FindListError "No list found with the project name", Cmd.none )
+                                    ( FindListError "No list found with the project name", Cmd.none )
 
                                 [ list ] ->
-                                    ( Model <| GettingListCards list.id, getCards credentials list.id )
+                                    ( GettingListCards list.id, getCards credentials list.id )
 
                                 _ ->
-                                    ( Model <| FindListError "Too many lists found with the project name", Cmd.none )
+                                    ( FindListError "Too many lists found with the project name", Cmd.none )
 
                         _ ->
-                            ( Model <| Error "Received lists at unexpected time", Cmd.none )
+                            ( Error "Received lists at unexpected time", Cmd.none )
 
         CardsReceived credentials result ->
             case result of
                 Err httpErr ->
-                    ( Model <| CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
+                    ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
 
                 Ok cards ->
-                    ( Model <| Items cards Dict.empty
+                    ( Items cards Dict.empty
                     , Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
                     )
 
         ChecklistsReceived cardId result ->
-            case model.runtimeModel of
+            case runtime of
                 Items cards checklists ->
                     case result of
                         Ok newChecklists ->
-                            ( Model <| Items cards (Dict.insert cardId newChecklists checklists)
+                            ( Items cards (Dict.insert cardId newChecklists checklists)
                             , Cmd.none
                             )
 
                         Err error ->
-                            ( Model <| Error <| httpErrToString error, Cmd.none )
+                            ( Error <| httpErrToString error, Cmd.none )
 
                 _ ->
-                    ( Model <| Error "Received checklists whilst in unexpected state", Cmd.none )
+                    ( Error "Received checklists whilst in unexpected state", Cmd.none )
 
 
 getLists : RequestCredentials -> String -> Cmd Msg
