@@ -678,7 +678,7 @@ smallTag text =
 
 markCheckitemDoneButton : Card -> Checkitem -> String -> Html Msg
 markCheckitemDoneButton card checkItem text =
-    button [ onClick <| MarkCheckitemDone card.id checkItem.id ] [ Html.text text ]
+    button [ onClick <| MarkCheckitemDone card.id checkItem.id, class "markCheckitemDoneButton" ] [ Html.text text ]
 
 
 httpErrToString : Http.Error -> String

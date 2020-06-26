@@ -29,6 +29,13 @@
       font-size: smaller;
       color: #74737a;
     }
+    div.projectCard button.markCheckitemDoneButton {
+      float: right;
+      border-radius: 4px;
+      border: 0px;
+      color: #646369;
+      box-shadow: 1px 1px 1px #888888;
+    }
     span.smallTag {
       vertical-align: middle;
       background-color: #ededed;
