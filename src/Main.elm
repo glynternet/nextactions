@@ -8,7 +8,7 @@ import Html exposing (Html, br, button, div, span, text)
 import Html.Attributes exposing (class)
 import Html.Events exposing (onClick)
 import Http exposing (Error(..))
-import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, map5, string)
+import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, string)
 import Url exposing (Protocol(..))
 
 
@@ -453,7 +453,7 @@ checkitemDecoder =
 type NextActions
     = Complete
     | InProgress InProgressActions
-    | Backlogged String
+    | Backlogged Checkitem
     | EmptyList
 
 
@@ -494,7 +494,7 @@ checklistItemsToNextActions items =
                             List.length items
                     in
                     if incompletesLength == itemsLength then
-                        Backlogged first.name
+                        Backlogged first
 
                     else
                         InProgress <|
@@ -642,17 +642,17 @@ viewAuthorized runtime =
                                                     case nas of
                                                         InProgress incompleteActions ->
                                                             [ span [] <|
-                                                                [ text <| incompleteActions.nextAction.name
-                                                                , span [ class "smallTag" ]
-                                                                    [ text <|
-                                                                        if incompleteActions.incomplete == 1 then
-                                                                            "✨ last one! ✨"
+                                                                (text <| incompleteActions.nextAction.name)
+                                                                    :: (if incompleteActions.incomplete == 1 then
+                                                                            [ smallTag "✨ last one! ✨"
+                                                                            , markCheckitemDoneButton card incompleteActions.nextAction "Finish!"
+                                                                            ]
 
                                                                         else
-                                                                            "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
-                                                                    ]
-                                                                , button [ onClick <| MarkCheckitemDone card.id incompleteActions.nextAction.id ] [ text "Next!" ]
-                                                                ]
+                                                                            [ smallTag <| "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
+                                                                            , markCheckitemDoneButton card incompleteActions.nextAction "Next!"
+                                                                            ]
+                                                                       )
                                                             , Progress.progress [ Progress.value <| completePercent incompleteActions ]
                                                             ]
 
@@ -663,10 +663,22 @@ viewAuthorized runtime =
                                                             [ text <| "\u{1F9D0} actions list has no items" ]
 
                                                         Backlogged first ->
-                                                            [ text <| "😌 not started: " ++ first ]
+                                                            [ text <| "😌 not started: " ++ first.name
+                                                            , markCheckitemDoneButton card first "Started!"
+                                                            ]
                                             )
                                 )
                     )
+
+
+smallTag : String -> Html Msg
+smallTag text =
+    span [ class "smallTag" ] [ Html.text text ]
+
+
+markCheckitemDoneButton : Card -> Checkitem -> String -> Html Msg
+markCheckitemDoneButton card checkItem text =
+    button [ onClick <| MarkCheckitemDone card.id checkItem.id ] [ Html.text text ]
 
 
 httpErrToString : Http.Error -> String
