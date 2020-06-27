@@ -37,6 +37,7 @@
       box-shadow: 1px 1px 1px #888888;
     }
     span.smallTag {
+      white-space: nowrap;
       vertical-align: middle;
       background-color: #ededed;
       color: #7d7c83;
