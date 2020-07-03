@@ -4,6 +4,10 @@ server {
     ssl_certificate     /etc/ssl/{{DOMAIN}}.pem;
     ssl_certificate_key /etc/ssl/{{DOMAIN}}.key;
 
+    # https://stackoverflow.com/questions/15429043/how-to-redirect-on-the-same-port-from-http-to-https-with-nginx-reverse-proxy
+    # http://nginx.org/en/docs/http/ngx_http_ssl_module.html#Nonstandard_error_codes
+    error_page 497 301 =307 https://$host:$server_port$request_uri;
+
     root /var/www/;
     index index.html;
 
