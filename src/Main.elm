@@ -177,7 +177,12 @@ runtimeUpdate msg runtime =
                 Authorize apiKey redirectURL ->
                     ( runtime
                     , Browser.Navigation.load
-                        (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read,write&response_type=token&key=" ++ apiKey ++ "&return_url=" ++ redirectURL)
+                        (apiBaseUrl
+                            ++ "/authorize?expiration=1day&name=testing-login&scope=read,write&response_type=token&key="
+                            ++ apiKey
+                            ++ "&return_url="
+                            ++ redirectURL
+                        )
                     )
 
                 _ ->
