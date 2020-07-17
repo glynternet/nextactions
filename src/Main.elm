@@ -6,7 +6,7 @@ import Browser.Navigation
 import Dict exposing (Dict)
 import Html exposing (Html, br, button, div, span, text)
 import Html.Attributes exposing (class)
-import Html.Events exposing (onClick)
+import Html.Events exposing (on, onClick)
 import Http exposing (Error(..))
 import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, string)
 import Url exposing (Protocol(..))
@@ -158,6 +158,7 @@ type Msg
     | ChecklistsReceived String (Result Http.Error Checklists)
     | MarkCheckitemDone String String
     | MarkCheckitemDoneResult String (Result Http.Error Checkitem)
+    | GoToProject Card
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -286,6 +287,9 @@ authorizedRuntimeUpdate msg runtime =
 
                     _ ->
                         ( MarkCheckitemDoneError "MarkCheckitemDoneResult received at unexpected time", Cmd.none )
+
+        GoToProject card ->
+            ( runtime, Browser.Navigation.load <| "https://trello.com/c/" ++ card.id )
 
 
 getLists : RequestCredentials -> String -> Cmd Msg
@@ -630,23 +634,25 @@ viewAuthorized runtime =
                                         [ class "projectCard" ]
                                     <|
                                         List.append
-                                            [ span [ class "projectTitle" ] [ text <| card.name ]
+                                            [ span
+                                                [ class "projectTitle", onClick <| GoToProject card ]
+                                                [ text <| card.name ]
                                             , br [] []
                                             ]
                                             (case res of
                                                 NoChecklists ->
-                                                    [ text "️😖 no lists" ]
+                                                    [ span [ onClick <| GoToProject card ] <| [ text "️😖 no lists" ] ]
 
                                                 NoActionsChecklists ->
-                                                    [ text "\u{1F9D0} no actions list" ]
+                                                    [ span [ onClick <| GoToProject card ] <| [ text "\u{1F9D0} no actions list" ] ]
 
                                                 TooManyActionsChecklists names ->
-                                                    [ text <| "😕 more than one actions list: " ++ String.join ", " names ]
+                                                    [ span [ onClick <| GoToProject card ] <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
 
                                                 NextActions nas ->
                                                     case nas of
                                                         InProgress incompleteActions ->
-                                                            [ span [] <|
+                                                            [ span [ onClick <| GoToProject card ] <|
                                                                 (text <| incompleteActions.nextAction.name)
                                                                     :: (if incompleteActions.incomplete == 1 then
                                                                             [ smallTag "✨ last one! ✨"
@@ -662,13 +668,13 @@ viewAuthorized runtime =
                                                             ]
 
                                                         Complete ->
-                                                            [ text "\u{1F92A} complete!" ]
+                                                            [ span [ onClick <| GoToProject card ] <| [ text "\u{1F92A} complete!" ] ]
 
                                                         EmptyList ->
-                                                            [ text <| "\u{1F9D0} actions list has no items" ]
+                                                            [ span [ onClick <| GoToProject card ] <| [ text <| "\u{1F9D0} actions list has no items" ] ]
 
                                                         Backlogged first ->
-                                                            [ text <| "😌 not started: " ++ first.name
+                                                            [ span [ onClick <| GoToProject card ] <| [ text <| "😌 not started: " ++ first.name ]
                                                             , markCheckitemDoneButton card first "Started!"
                                                             ]
                                             )
