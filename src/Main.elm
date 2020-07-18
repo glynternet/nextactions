@@ -8,7 +8,8 @@ import Html exposing (Html, br, button, div, span, text)
 import Html.Attributes exposing (class)
 import Html.Events exposing (on, onClick)
 import Http exposing (Error(..))
-import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, string)
+import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, maybe, string)
+import Ports
 import Url exposing (Protocol(..))
 
 
@@ -72,6 +73,7 @@ type AuthorizedRuntimeState
 
 type alias Config =
     { apiKey : String
+    , token : Maybe String
     , boardId : String
     , loginRedirect : String
     }
@@ -79,8 +81,9 @@ type alias Config =
 
 configDecoder : Decoder Config
 configDecoder =
-    map3 Config
+    map4 Config
         (field "apiKey" string)
+        (maybe <| field "token" string)
         (field "boardId" string)
         (field "loginRedirect" string)
 
@@ -107,7 +110,7 @@ init configValue url _ =
                                         RequestCredentials config.apiKey token
                                 in
                                 ( Model <| (Authorized <| AuthorizedRuntime credentials (AuthorizedRuntimeConfig config.boardId) <| GettingBoardLists)
-                                , getLists credentials config.boardId
+                                , Cmd.batch [ storeToken token, getLists credentials config.boardId ]
                                 )
 
                             Err err ->
@@ -116,14 +119,36 @@ init configValue url _ =
                                 )
                     )
                 |> Maybe.withDefault
-                    ( Model <| Unauthorized config.apiKey config.loginRedirect
-                    , Cmd.none
+                    (case config.token of
+                        Just token ->
+                            let
+                                credentials =
+                                    RequestCredentials config.apiKey token
+                            in
+                            ( Model <|
+                                Authorized <|
+                                    AuthorizedRuntime
+                                        credentials
+                                        (AuthorizedRuntimeConfig config.boardId)
+                                        GettingBoardLists
+                            , getLists credentials config.boardId
+                            )
+
+                        Nothing ->
+                            ( Model <| Unauthorized config.apiKey config.loginRedirect
+                            , Cmd.none
+                            )
                     )
 
         Err err ->
             ( Model (Error <| "Error decoding the init config: " ++ errorToString err)
             , Cmd.none
             )
+
+
+storeToken : String -> Cmd msg
+storeToken token =
+    Ports.storeToken token
 
 
 type alias FragmentError =

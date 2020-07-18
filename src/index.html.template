@@ -64,12 +64,22 @@
   <script src="elm.js"></script>
 </head>
 <body>
-<script>var app = Elm.Main.init({
-    flags: {
-      apiKey: {{API_KEY}},
-      boardId: {{BOARD_ID}},
-      loginRedirect: {{LOGIN_REDIRECT}}
-    }
-  });</script>
+  <script>
+    const tokenStorageKey = 'token';
+    const token = localStorage.getItem(tokenStorageKey);
+    console.log(token ? "Token loaded from storage." : "No token found in storage.");
+    const app = Elm.Main.init({
+      flags: {
+        apiKey: {{API_KEY}},
+        token: token,
+        boardId: {{BOARD_ID}},
+        loginRedirect: {{LOGIN_REDIRECT}}
+      }
+    });
+    app.ports.storeToken.subscribe(token => {
+      localStorage.setItem(tokenStorageKey, token);
+      console.log("Stored token.");
+    });
+  </script>
 </body>
 </html>
