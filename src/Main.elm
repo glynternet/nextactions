@@ -150,10 +150,10 @@ parseTokenFromFragment segments =
 type Msg
     = Never
     | Authorize APIKey String
-    | GetLists RequestCredentials String
+    | GetLists String
     | ListsReceived (Result Http.Error Lists)
-    | ListSelected RequestCredentials String
-    | CardsReceived RequestCredentials (Result Http.Error Cards)
+    | ListSelected String
+    | CardsReceived (Result Http.Error Cards)
     | CardReceived (Result Http.Error Card)
     | ChecklistsReceived String (Result Http.Error Checklists)
     | MarkCheckitemDone String String
@@ -206,8 +206,8 @@ authorizedRuntimeUpdate msg runtime =
                 (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=" ++ apiKey ++ "&return_url=" ++ redirectURL)
             )
 
-        GetLists credentials id ->
-            ( runtime, getLists credentials id )
+        GetLists id ->
+            ( runtime, getLists runtime.credentials id )
 
         ListsReceived result ->
             (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
@@ -218,11 +218,11 @@ authorizedRuntimeUpdate msg runtime =
                     Ok lists ->
                         ( SelectingList lists, Cmd.none )
 
-        ListSelected credentials listId ->
+        ListSelected listId ->
             (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
-                ( GettingListCards, getCards credentials listId )
+                ( GettingListCards, getCards runtime.credentials listId )
 
-        CardsReceived credentials result ->
+        CardsReceived result ->
             (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
                 case result of
                     Err httpErr ->
@@ -230,7 +230,7 @@ authorizedRuntimeUpdate msg runtime =
 
                     Ok cards ->
                         ( Items cards Dict.empty
-                        , Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
+                        , Cmd.batch (List.map (\c -> getChecklists runtime.credentials c.id) cards)
                         )
 
         CardReceived result ->
@@ -304,7 +304,7 @@ getCards : RequestCredentials -> String -> Cmd Msg
 getCards credentials listId =
     getItems credentials
         ("/lists/" ++ listId ++ "/cards")
-        (CardsReceived credentials)
+        CardsReceived
         cardsDecoder
 
 
@@ -568,7 +568,7 @@ viewAuthorized runtime =
             [ text err ]
 
         SelectingList lists ->
-            List.map (\l -> button [ onClick <| ListSelected runtime.credentials l.id ] [ text l.name ]) lists
+            List.map (\l -> button [ onClick <| ListSelected l.id ] [ text l.name ]) lists
 
         GettingListCards ->
             [ text <| "Loading projects... " ]
