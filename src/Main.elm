@@ -10,6 +10,7 @@ import Html.Events exposing (on, onClick)
 import Http exposing (Error(..))
 import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, maybe, string)
 import Ports
+import String exposing (join)
 import Url exposing (Protocol(..))
 
 
@@ -204,10 +205,17 @@ runtimeUpdate msg runtime =
                     ( runtime
                     , Browser.Navigation.load
                         (apiBaseUrl
-                            ++ "/authorize?expiration=1day&name=testing-login&scope=read,write&response_type=token&key="
-                            ++ apiKey
-                            ++ "&return_url="
-                            ++ redirectURL
+                            ++ "/authorize?"
+                            ++ ([ ( "expiration", "1day" )
+                                , ( "name", "testing-login" )
+                                , ( "scope", "read,write" )
+                                , ( "response_type", "token" )
+                                , ( "key", apiKey )
+                                , ( "return_url", redirectURL )
+                                ]
+                                    |> List.map (\( k, v ) -> k ++ "=" ++ v)
+                                    |> join "&"
+                               )
                         )
                     )
 
