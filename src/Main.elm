@@ -207,7 +207,7 @@ runtimeUpdate msg runtime =
                         (apiBaseUrl
                             ++ "/authorize?"
                             ++ ([ ( "expiration", "1day" )
-                                , ( "name", "testing-login" )
+                                , ( "name", "Next!" )
                                 , ( "scope", "read,write" )
                                 , ( "response_type", "token" )
                                 , ( "key", apiKey )
