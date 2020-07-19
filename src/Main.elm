@@ -6,7 +6,7 @@ import Browser.Navigation
 import Dict exposing (Dict)
 import Html exposing (Html, br, button, div, span, text)
 import Html.Attributes exposing (class)
-import Html.Events exposing (on, onClick)
+import Html.Events exposing (onClick)
 import Http exposing (Error(..))
 import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, maybe, string)
 import Ports
