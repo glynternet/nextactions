@@ -329,6 +329,7 @@ authorizedRuntimeUpdate msg runtime =
 
         ReceivedUnauthorisedResponse ->
             --TODO: should probably show that there has been an error here
+            --TODO: remove stored token
             ( Unauthorized, Cmd.none )
 
 
