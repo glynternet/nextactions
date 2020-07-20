@@ -10,6 +10,7 @@ import Html.Events exposing (onClick)
 import Http exposing (Error(..))
 import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, maybe, string)
 import Ports
+import Result.Extra
 import String exposing (join)
 import Url exposing (Protocol(..))
 
@@ -39,12 +40,19 @@ main =
 
 type alias Model =
     { runtimeModel : Runtime
+    , apiConfig : APIConfig
+    }
+
+
+type alias APIConfig =
+    { apiKey : String
+    , loginRedirect : String
     }
 
 
 type Runtime
     = Error String
-    | Unauthorized APIKey String
+    | Unauthorized
     | Authorized AuthorizedRuntime
 
 
@@ -93,14 +101,14 @@ type alias BoardID =
     String
 
 
-type alias APIKey =
-    String
-
-
 init : Value -> Url.Url -> Browser.Navigation.Key -> ( Model, Cmd Msg )
 init configValue url _ =
     case decodeValue configDecoder configValue of
         Ok config ->
+            let
+                apiConfig =
+                    APIConfig config.apiKey config.loginRedirect
+            in
             url.fragment
                 |> Maybe.map
                     (\frag ->
@@ -110,12 +118,14 @@ init configValue url _ =
                                     credentials =
                                         RequestCredentials config.apiKey token
                                 in
-                                ( Model <| (Authorized <| AuthorizedRuntime credentials (AuthorizedRuntimeConfig config.boardId) <| GettingBoardLists)
+                                ( Model
+                                    (Authorized <| AuthorizedRuntime credentials (AuthorizedRuntimeConfig config.boardId) <| GettingBoardLists)
+                                    apiConfig
                                 , Cmd.batch [ storeToken token, getLists credentials config.boardId ]
                                 )
 
                             Err err ->
-                                ( Model <| Error err
+                                ( Model (Error err) apiConfig
                                 , Cmd.none
                                 )
                     )
@@ -126,23 +136,25 @@ init configValue url _ =
                                 credentials =
                                     RequestCredentials config.apiKey token
                             in
-                            ( Model <|
-                                Authorized <|
+                            ( Model
+                                (Authorized <|
                                     AuthorizedRuntime
                                         credentials
                                         (AuthorizedRuntimeConfig config.boardId)
                                         GettingBoardLists
+                                )
+                                apiConfig
                             , getLists credentials config.boardId
                             )
 
                         Nothing ->
-                            ( Model <| Unauthorized config.apiKey config.loginRedirect
+                            ( Model Unauthorized apiConfig
                             , Cmd.none
                             )
                     )
 
         Err err ->
-            ( Model (Error <| "Error decoding the init config: " ++ errorToString err)
+            ( Model (Error <| "Error decoding the init config: " ++ errorToString err) (APIConfig "" "")
             , Cmd.none
             )
 
@@ -175,7 +187,7 @@ parseTokenFromFragment segments =
 
 type Msg
     = Never
-    | Authorize APIKey String
+    | Authorize APIConfig
     | GetLists String
     | ListsReceived (Result Http.Error Lists)
     | ListSelected String
@@ -185,12 +197,13 @@ type Msg
     | MarkCheckitemDone String String
     | MarkCheckitemDoneResult String (Result Http.Error Checkitem)
     | GoToProject Card
+    | ReceivedUnauthorisedResponse
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     runtimeUpdate msg model.runtimeModel
-        |> (\( runtime, cmd ) -> ( Model runtime, cmd ))
+        |> (\( runtime, cmd ) -> ( Model runtime model.apiConfig, cmd ))
 
 
 runtimeUpdate : Msg -> Runtime -> ( Runtime, Cmd Msg )
@@ -199,24 +212,11 @@ runtimeUpdate msg runtime =
         Error string ->
             ( Error string, Cmd.none )
 
-        Unauthorized _ _ ->
+        Unauthorized ->
             case msg of
-                Authorize apiKey redirectURL ->
+                Authorize apiConfig ->
                     ( runtime
-                    , Browser.Navigation.load
-                        (apiBaseUrl
-                            ++ "/authorize?"
-                            ++ ([ ( "expiration", "1day" )
-                                , ( "name", "Next!" )
-                                , ( "scope", "read,write" )
-                                , ( "response_type", "token" )
-                                , ( "key", apiKey )
-                                , ( "return_url", redirectURL )
-                                ]
-                                    |> List.map (\( k, v ) -> k ++ "=" ++ v)
-                                    |> join "&"
-                               )
-                        )
+                    , navigateToTrelloAuthorisePage apiConfig
                     )
 
                 _ ->
@@ -224,42 +224,45 @@ runtimeUpdate msg runtime =
 
         Authorized authorizedRuntime ->
             authorizedRuntimeUpdate msg authorizedRuntime
-                |> (\( r, cmd ) -> ( Authorized r, cmd ))
 
 
-authorizedRuntimeUpdate : Msg -> AuthorizedRuntime -> ( AuthorizedRuntime, Cmd Msg )
+authorizedRuntimeUpdate : Msg -> AuthorizedRuntime -> ( Runtime, Cmd Msg )
 authorizedRuntimeUpdate msg runtime =
     case msg of
         Never ->
-            ( runtime, Cmd.none )
+            ( Authorized runtime, Cmd.none )
 
-        Authorize apiKey redirectURL ->
-            ( runtime
-            , Browser.Navigation.load
-                (apiBaseUrl ++ "/authorize?expiration=1day&name=testing-login&scope=read&response_type=token&key=" ++ apiKey ++ "&return_url=" ++ redirectURL)
+        Authorize apiConfig ->
+            ( Authorized runtime
+            , navigateToTrelloAuthorisePage apiConfig
             )
 
         GetLists id ->
-            ( runtime, getLists runtime.credentials id )
+            ( Authorized runtime, getLists runtime.credentials id )
 
         ListsReceived result ->
-            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case result of
                     Err httpErr ->
-                        ( ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr, Cmd.none )
+                        ( ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr
+                        , Cmd.none
+                        )
 
                     Ok lists ->
-                        ( SelectingList lists, Cmd.none )
+                        ( SelectingList lists
+                        , Cmd.none
+                        )
 
         ListSelected listId ->
-            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
-                ( GettingListCards, getCards runtime.credentials listId )
+            ( updateAuthRuntimeState runtime GettingListCards, getCards runtime.credentials listId )
 
         CardsReceived result ->
-            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case result of
                     Err httpErr ->
-                        ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr, Cmd.none )
+                        ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr
+                        , Cmd.none
+                        )
 
                     Ok cards ->
                         ( Items cards Dict.empty
@@ -267,7 +270,7 @@ authorizedRuntimeUpdate msg runtime =
                         )
 
         CardReceived result ->
-            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case runtime.state of
                     Items cards _ ->
                         case result of
@@ -287,7 +290,7 @@ authorizedRuntimeUpdate msg runtime =
                         ( CardGetError "Received card at unexpected time", Cmd.none )
 
         ChecklistsReceived cardId result ->
-            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case runtime.state of
                     Items cards checklists ->
                         case result of
@@ -303,10 +306,10 @@ authorizedRuntimeUpdate msg runtime =
                         ( ListsGetError "Received checklists at unexpected time", Cmd.none )
 
         MarkCheckitemDone cardId checkitemId ->
-            ( runtime, putMarkCheckitemAsDone runtime.credentials cardId checkitemId )
+            ( Authorized runtime, putMarkCheckitemAsDone runtime.credentials cardId checkitemId )
 
         MarkCheckitemDoneResult cardId result ->
-            (\( authRuntimeState, cmd ) -> ( { runtime | state = authRuntimeState }, cmd )) <|
+            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case runtime.state of
                     Items _ _ ->
                         case result of
@@ -322,7 +325,34 @@ authorizedRuntimeUpdate msg runtime =
                         ( MarkCheckitemDoneError "MarkCheckitemDoneResult received at unexpected time", Cmd.none )
 
         GoToProject card ->
-            ( runtime, Browser.Navigation.load <| "https://trello.com/c/" ++ card.id )
+            ( Authorized runtime, Browser.Navigation.load <| "https://trello.com/c/" ++ card.id )
+
+        ReceivedUnauthorisedResponse ->
+            --TODO: should probably show that there has been an error here
+            ( Unauthorized, Cmd.none )
+
+
+updateAuthRuntimeState : AuthorizedRuntime -> AuthorizedRuntimeState -> Runtime
+updateAuthRuntimeState authRuntime state =
+    Authorized { authRuntime | state = state }
+
+
+navigateToTrelloAuthorisePage : APIConfig -> Cmd msg
+navigateToTrelloAuthorisePage apiConfig =
+    Browser.Navigation.load
+        (apiBaseUrl
+            ++ "/authorize?"
+            ++ ([ ( "expiration", "1day" )
+                , ( "name", "Next!" )
+                , ( "scope", "read,write" )
+                , ( "response_type", "token" )
+                , ( "key", apiConfig.apiKey )
+                , ( "return_url", apiConfig.loginRedirect )
+                ]
+                    |> List.map (\( k, v ) -> k ++ "=" ++ v)
+                    |> join "&"
+               )
+        )
 
 
 getLists : RequestCredentials -> String -> Cmd Msg
@@ -366,8 +396,37 @@ getItems : RequestCredentials -> String -> (Result Error a -> Msg) -> Decode.Dec
 getItems credentials endpoint toMsg decoder =
     Http.get
         { url = apiBaseUrl ++ endpoint ++ "?" ++ credentialsParams credentials
-        , expect = Http.expectJson toMsg decoder
+        , expect =
+            Http.expectJson
+                (interceptKnownHTTPError toMsg)
+                decoder
         }
+
+
+interceptKnownHTTPError : (Result Error a -> Msg) -> (Result Error a -> Msg)
+interceptKnownHTTPError toMsg =
+    \res ->
+        res
+            |> Result.map (\_ -> toMsg res)
+            |> Result.mapError
+                (\err ->
+                    if httpErrIsUnauthorised err then
+                        ReceivedUnauthorisedResponse
+
+                    else
+                        toMsg res
+                )
+            |> Result.Extra.merge
+
+
+httpErrIsUnauthorised : Http.Error -> Bool
+httpErrIsUnauthorised error =
+    case error of
+        BadStatus code ->
+            code == 401
+
+        _ ->
+            False
 
 
 putMarkCheckitemAsDone : RequestCredentials -> String -> String -> Cmd Msg
@@ -583,8 +642,8 @@ view model =
                 Error err ->
                     [ text err ]
 
-                Unauthorized apiKey redirectURL ->
-                    [ button [ onClick <| Authorize apiKey redirectURL ] [ text "Authorize" ] ]
+                Unauthorized ->
+                    [ button [ onClick <| Authorize model.apiConfig ] [ text "Authorize" ] ]
 
                 Authorized authorizedRuntime ->
                     viewAuthorized authorizedRuntime
