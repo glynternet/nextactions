@@ -661,7 +661,10 @@ viewAuthorized runtime =
             [ text err ]
 
         SelectingList lists ->
-            List.map (\l -> button [ onClick <| ListSelected l.id ] [ text l.name ]) lists
+            [ div
+                [ class "listSelectionContainer" ]
+                (List.map (\l -> button [ onClick <| ListSelected l.id ] [ text l.name ]) lists)
+            ]
 
         GettingListCards ->
             [ text <| "Loading projects... " ]
