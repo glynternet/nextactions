@@ -691,36 +691,7 @@ viewAuthorized runtime =
                         )
                     )
                 |> List.sortBy
-                    (\( _, maybeNas ) ->
-                        case maybeNas of
-                            Nothing ->
-                                0
-
-                            Just nasRes ->
-                                case nasRes of
-                                    NoActionsChecklists ->
-                                        1
-
-                                    TooManyActionsChecklists _ ->
-                                        2
-
-                                    NoChecklists ->
-                                        3
-
-                                    NextActions nas ->
-                                        case nas of
-                                            EmptyList ->
-                                                4
-
-                                            Complete ->
-                                                5
-
-                                            InProgress incompleteNas ->
-                                                6 + (1 - completeNormalisedPercent incompleteNas)
-
-                                            Backlogged _ ->
-                                                7
-                    )
+                    (\( _, maybeNas ) -> maybeNextActionsSortValue maybeNas)
                 |> List.filterMap
                     (\( card, maybeNas ) ->
                         maybeNas
@@ -738,6 +709,38 @@ viewAuthorized runtime =
                                             (nextActionsCard res card)
                                 )
                     )
+
+
+maybeNextActionsSortValue : Maybe NextActionsResult -> Float
+maybeNextActionsSortValue maybeNas =
+    case maybeNas of
+        Nothing ->
+            0
+
+        Just nasRes ->
+            case nasRes of
+                NoActionsChecklists ->
+                    1
+
+                TooManyActionsChecklists _ ->
+                    2
+
+                NoChecklists ->
+                    3
+
+                NextActions nas ->
+                    case nas of
+                        EmptyList ->
+                            4
+
+                        Complete ->
+                            5
+
+                        InProgress incompleteNas ->
+                            6 + (1 - completeNormalisedPercent incompleteNas)
+
+                        Backlogged _ ->
+                            7
 
 
 nextActionsCard : NextActionsResult -> Card -> List (Html Msg)
