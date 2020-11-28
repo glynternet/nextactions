@@ -683,64 +683,53 @@ viewAuthorized runtime =
 
         Items cards cardChecklists ->
             cards
-                |> List.map
-                    (\c ->
-                        ( c
-                        , Dict.get c.id cardChecklists
-                            |> Maybe.map checklistsToNextActionsResult
-                        )
+                |> List.filterMap
+                    (\card ->
+                        Dict.get card.id cardChecklists
+                            |> Maybe.map (\checklists -> ( card, checklistsToNextActionsResult checklists ))
                     )
                 |> List.sortBy
-                    (\( _, maybeNas ) -> maybeNextActionsSortValue maybeNas)
-                |> List.filterMap
-                    (\( card, maybeNas ) ->
-                        maybeNas
-                            |> Maybe.map
-                                (\res ->
-                                    div
-                                        [ class "projectCard" ]
-                                    <|
-                                        List.append
-                                            [ span
-                                                [ class "projectTitle", onClick <| GoToProject card ]
-                                                [ text <| card.name ]
-                                            , br [] []
-                                            ]
-                                            (nextActionsCard res card)
-                                )
+                    (\( _, nextActionsResult ) -> maybeNextActionsSortValue nextActionsResult)
+                |> List.map
+                    (\( card, res ) ->
+                        div
+                            [ class "projectCard" ]
+                        <|
+                            List.append
+                                [ span
+                                    [ class "projectTitle", onClick <| GoToProject card ]
+                                    [ text <| card.name ]
+                                , br [] []
+                                ]
+                                (nextActionsCard res card)
                     )
 
 
-maybeNextActionsSortValue : Maybe NextActionsResult -> Float
-maybeNextActionsSortValue maybeNas =
-    case maybeNas of
-        Nothing ->
-            0
+maybeNextActionsSortValue : NextActionsResult -> Float
+maybeNextActionsSortValue nasRes =
+    case nasRes of
+        NoActionsChecklists ->
+            1
 
-        Just nasRes ->
-            case nasRes of
-                NoActionsChecklists ->
-                    1
+        TooManyActionsChecklists _ ->
+            2
 
-                TooManyActionsChecklists _ ->
-                    2
+        NoChecklists ->
+            3
 
-                NoChecklists ->
-                    3
+        NextActions nas ->
+            case nas of
+                EmptyList ->
+                    4
 
-                NextActions nas ->
-                    case nas of
-                        EmptyList ->
-                            4
+                Complete ->
+                    5
 
-                        Complete ->
-                            5
+                InProgress incompleteNas ->
+                    6 + (1 - completeNormalisedPercent incompleteNas)
 
-                        InProgress incompleteNas ->
-                            6 + (1 - completeNormalisedPercent incompleteNas)
-
-                        Backlogged _ ->
-                            7
+                Backlogged _ ->
+                    7
 
 
 nextActionsCard : NextActionsResult -> Card -> List (Html Msg)
