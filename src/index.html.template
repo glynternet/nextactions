@@ -37,6 +37,13 @@
     div.projectCard button.markCheckitemDoneButton {
       float: right;
     }
+    div.projectCard div.cardBodyWithButtons {
+      display: flex;
+      justify-content: space-between;
+    }
+    div.projectCard div.cardBodyWithButtons div {
+      display: inline;
+    }
     span.smallTag {
       white-space: nowrap;
       vertical-align: middle;

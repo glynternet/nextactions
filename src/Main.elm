@@ -735,47 +735,60 @@ viewAuthorized runtime =
                                                 [ text <| card.name ]
                                             , br [] []
                                             ]
-                                            (case res of
-                                                NoChecklists ->
-                                                    [ span [ onClick <| GoToProject card ] <| [ text "️😖 no lists" ] ]
-
-                                                NoActionsChecklists ->
-                                                    [ span [ onClick <| GoToProject card ] <| [ text "\u{1F9D0} no actions list" ] ]
-
-                                                TooManyActionsChecklists names ->
-                                                    [ span [ onClick <| GoToProject card ] <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
-
-                                                NextActions nas ->
-                                                    case nas of
-                                                        InProgress incompleteActions ->
-                                                            [ span [ onClick <| GoToProject card ] <|
-                                                                (text <| incompleteActions.nextAction.name)
-                                                                    :: (if incompleteActions.incomplete == 1 then
-                                                                            [ smallTag "✨ last one! ✨"
-                                                                            , markCheckitemDoneButton card incompleteActions.nextAction "Finish!"
-                                                                            ]
-
-                                                                        else
-                                                                            [ smallTag <| "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
-                                                                            , markCheckitemDoneButton card incompleteActions.nextAction "Next!"
-                                                                            ]
-                                                                       )
-                                                            , Progress.progress [ Progress.value <| completePercent incompleteActions ]
-                                                            ]
-
-                                                        Complete ->
-                                                            [ span [ onClick <| GoToProject card ] <| [ text "\u{1F92A} complete!" ] ]
-
-                                                        EmptyList ->
-                                                            [ span [ onClick <| GoToProject card ] <| [ text <| "\u{1F9D0} actions list has no items" ] ]
-
-                                                        Backlogged first ->
-                                                            [ span [ onClick <| GoToProject card ] <| [ text <| "😌 not started: " ++ first.name ]
-                                                            , markCheckitemDoneButton card first "Started!"
-                                                            ]
-                                            )
+                                            (nextActionsCard res card)
                                 )
                     )
+
+
+nextActionsCard : NextActionsResult -> Card -> List (Html Msg)
+nextActionsCard result card =
+    case result of
+        NoChecklists ->
+            [ span [ onClick <| GoToProject card ] <| [ text "️😖 no lists" ] ]
+
+        NoActionsChecklists ->
+            [ span [ onClick <| GoToProject card ] <| [ text "\u{1F9D0} no actions list" ] ]
+
+        TooManyActionsChecklists names ->
+            [ span [ onClick <| GoToProject card ] <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
+
+        NextActions nas ->
+            case nas of
+                InProgress incompleteActions ->
+                    [ div [ class "cardBodyWithButtons", onClick <| GoToProject card ] <|
+                        if incompleteActions.incomplete == 1 then
+                            bodyWithButtons
+                                [ text <| incompleteActions.nextAction.name, smallTag "✨ last one! ✨" ]
+                                [ markCheckitemDoneButton card incompleteActions.nextAction "Finish!" ]
+
+                        else
+                            bodyWithButtons
+                                [ text <| incompleteActions.nextAction.name
+                                , smallTag <| "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
+                                ]
+                                [ markCheckitemDoneButton card incompleteActions.nextAction "Next!" ]
+                    , Progress.progress [ Progress.value <| completePercent incompleteActions ]
+                    ]
+
+                Complete ->
+                    [ span [ onClick <| GoToProject card ] <| [ text "\u{1F92A} complete!" ] ]
+
+                EmptyList ->
+                    [ span [ onClick <| GoToProject card ] <| [ text <| "\u{1F9D0} actions list has no items" ] ]
+
+                Backlogged first ->
+                    [ div [ class "cardBodyWithButtons", onClick <| GoToProject card ] <|
+                        bodyWithButtons
+                            [ text <| "😌 not started: " ++ first.name ]
+                            [ markCheckitemDoneButton card first "Started!" ]
+                    ]
+
+
+bodyWithButtons : List (Html Msg) -> List (Html Msg) -> List (Html Msg)
+bodyWithButtons message buttons =
+    [ div [] message
+    , div [] buttons
+    ]
 
 
 smallTag : String -> Html Msg
