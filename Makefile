@@ -11,7 +11,7 @@ $(BUILD_DIR):
 
 SRC_DIR ?= ./src
 
-elm-live: index.html
+elm-live: build index.html
 	elm-live $(SRC_DIR)/Main.elm --open --start-page=$(BUILD_DIR)/index.html -- --output=elm.js
 
 

@@ -31,10 +31,6 @@
     }
     div.projectCard button.markCheckitemDoneButton {
       float: right;
-      border-radius: 4px;
-      border: 0px;
-      color: #646369;
-      box-shadow: 1px 1px 1px #888888;
     }
     span.smallTag {
       white-space: nowrap;
@@ -55,6 +51,13 @@
     div.progress div[role=progressbar] {
       height: 6px;
       background-color: #b2dfeb;
+    }
+    button {
+      border-radius: 4px;
+      border: 0px;
+      color: #646369;
+      box-shadow: 1px 1px 1px #888888;
+      margin: 2px;
     }
     /*#f1faee*/
     /*e63946*/
