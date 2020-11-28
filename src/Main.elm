@@ -701,7 +701,7 @@ viewAuthorized runtime =
                                     [ text <| card.name ]
                                 , br [] []
                                 ]
-                                (nextActionsCard res card)
+                                (projectCard res card)
                     )
 
 
@@ -732,8 +732,8 @@ maybeNextActionsSortValue nasRes =
                     7
 
 
-nextActionsCard : NextActionsResult -> Card -> List (Html Msg)
-nextActionsCard result card =
+projectCard : NextActionsResult -> Card -> List (Html Msg)
+projectCard result card =
     case result of
         NoChecklists ->
             [ span [ onClick <| GoToProject card ] <| [ text "️😖 no lists" ] ]
@@ -747,14 +747,16 @@ nextActionsCard result card =
         NextActions nas ->
             case nas of
                 InProgress incompleteActions ->
-                    [ div [ class "cardBodyWithButtons", onClick <| GoToProject card ] <|
+                    [ div [ class "cardBodyWithButtons" ] <|
                         if incompleteActions.incomplete == 1 then
                             bodyWithButtons
+                                card
                                 [ text <| incompleteActions.nextAction.name, smallTag "✨ last one! ✨" ]
                                 [ markCheckitemDoneButton card incompleteActions.nextAction "Finish!" ]
 
                         else
                             bodyWithButtons
+                                card
                                 [ text <| incompleteActions.nextAction.name
                                 , smallTag <| "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
                                 ]
@@ -769,16 +771,17 @@ nextActionsCard result card =
                     [ span [ onClick <| GoToProject card ] <| [ text <| "\u{1F9D0} actions list has no items" ] ]
 
                 Backlogged first ->
-                    [ div [ class "cardBodyWithButtons", onClick <| GoToProject card ] <|
+                    [ div [ class "cardBodyWithButtons" ] <|
                         bodyWithButtons
+                            card
                             [ text <| "😌 not started: " ++ first.name ]
                             [ markCheckitemDoneButton card first "Started!" ]
                     ]
 
 
-bodyWithButtons : List (Html Msg) -> List (Html Msg) -> List (Html Msg)
-bodyWithButtons message buttons =
-    [ div [] message
+bodyWithButtons : Card -> List (Html Msg) -> List (Html Msg) -> List (Html Msg)
+bodyWithButtons card message buttons =
+    [ div [ onClick <| GoToProject card ] message
     , div [] buttons
     ]
 
