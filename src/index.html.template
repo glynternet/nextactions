@@ -26,7 +26,7 @@
       color: #646369;
       font-weight: bold;
       margin: 10px;
-      padding: 13px;
+      padding: 10px;
       border-radius: 5px;
       box-shadow: 3px 3px 1px #888888;
     }
@@ -59,6 +59,7 @@
     div.progress {
       background-color: #ededed;
       height: 6px;
+      margin: 2px;
     }
     div.progress div[role=progressbar] {
       height: 6px;
