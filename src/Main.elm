@@ -4,9 +4,9 @@ import Bootstrap.Progress as Progress
 import Browser
 import Browser.Navigation
 import Dict exposing (Dict)
-import Html exposing (Html, br, button, div, span, text)
+import Html exposing (Attribute, Html, br, button, div, span, text)
 import Html.Attributes exposing (class)
-import Html.Events exposing (onClick)
+import Html.Events as Events exposing (onClick)
 import Http exposing (Error(..))
 import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToString, field, float, list, map2, map3, map4, maybe, string)
 import Ports
@@ -644,11 +644,16 @@ view model =
                     [ text err ]
 
                 Unauthorized ->
-                    [ button [ onClick <| Authorize model.apiConfig ] [ text "Authorize" ] ]
+                    [ button (onClick <| Authorize model.apiConfig) [ text "Authorize" ] ]
 
                 Authorized authorizedRuntime ->
                     viewAuthorized authorizedRuntime
         ]
+
+
+onClick : Msg -> List (Attribute Msg)
+onClick msg =
+    [ class "clickable", Events.onClick msg ]
 
 
 viewAuthorized : AuthorizedRuntime -> List (Html Msg)
@@ -663,7 +668,7 @@ viewAuthorized runtime =
         SelectingList lists ->
             [ div
                 [ class "listSelectionContainer" ]
-                (List.map (\l -> button [ onClick <| ListSelected l.id ] [ text l.name ]) lists)
+                (List.map (\l -> button (onClick <| ListSelected l.id) [ text l.name ]) lists)
             ]
 
         GettingListCards ->
@@ -697,7 +702,7 @@ viewAuthorized runtime =
                         <|
                             List.append
                                 [ span
-                                    [ class "projectTitle", onClick <| GoToProject card ]
+                                    (class "projectTitle" :: (onClick <| GoToProject card))
                                     [ text <| card.name ]
                                 , br [] []
                                 ]
@@ -736,13 +741,13 @@ projectCard : NextActionsResult -> Card -> List (Html Msg)
 projectCard result card =
     case result of
         NoChecklists ->
-            [ span [ onClick <| GoToProject card ] <| [ text "️😖 no lists" ] ]
+            [ span (onClick <| GoToProject card) <| [ text "️😖 no lists" ] ]
 
         NoActionsChecklists ->
-            [ span [ onClick <| GoToProject card ] <| [ text "\u{1F9D0} no actions list" ] ]
+            [ span (onClick <| GoToProject card) <| [ text "\u{1F9D0} no actions list" ] ]
 
         TooManyActionsChecklists names ->
-            [ span [ onClick <| GoToProject card ] <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
+            [ span (onClick <| GoToProject card) <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
 
         NextActions nas ->
             case nas of
@@ -765,10 +770,10 @@ projectCard result card =
                     ]
 
                 Complete ->
-                    [ span [ onClick <| GoToProject card ] <| [ text "\u{1F92A} complete!" ] ]
+                    [ span (onClick <| GoToProject card) <| [ text "\u{1F92A} complete!" ] ]
 
                 EmptyList ->
-                    [ span [ onClick <| GoToProject card ] <| [ text <| "\u{1F9D0} actions list has no items" ] ]
+                    [ span (onClick <| GoToProject card) <| [ text <| "\u{1F9D0} actions list has no items" ] ]
 
                 Backlogged first ->
                     [ div [ class "cardBodyWithButtons" ] <|
@@ -781,7 +786,7 @@ projectCard result card =
 
 bodyWithButtons : Card -> List (Html Msg) -> List (Html Msg) -> List (Html Msg)
 bodyWithButtons card message buttons =
-    [ div [ onClick <| GoToProject card ] message
+    [ div (onClick <| GoToProject card) message
     , div [] buttons
     ]
 
@@ -793,7 +798,7 @@ smallTag text =
 
 markCheckitemDoneButton : Card -> Checkitem -> String -> Html Msg
 markCheckitemDoneButton card checkItem text =
-    button [ onClick <| MarkCheckitemDone card.id checkItem.id, class "markCheckitemDoneButton" ] [ Html.text text ]
+    button (class "markCheckitemDoneButton" :: (onClick <| MarkCheckitemDone card.id checkItem.id)) [ Html.text text ]
 
 
 httpErrToString : Http.Error -> String

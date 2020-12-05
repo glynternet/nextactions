@@ -71,6 +71,9 @@
       box-shadow: 1px 1px 1px #888888;
       margin: 2px;
     }
+    .clickable {
+      cursor: pointer;
+    }
     /*#f1faee*/
     /*e63946*/
     /*1d3557*/
