@@ -8,9 +8,10 @@
   <style>
     * {
       font-family: Arial, Helvetica, sans-serif;
+      box-sizing: border-box;
     }
     body {
-      padding: 0;
+      padding: 8px;
       margin: 0;
       background-color: #fffce7;
       width: 100%;
@@ -30,10 +31,12 @@
       font-weight: bold;
       max-width: 600px;
       width: 100%;
-      margin: 6px;
       padding: 10px;
       border-radius: 5px;
       box-shadow: 3px 3px 1px #888888;
+    }
+    div.projectCard + div.projectCard {
+      margin-top: 8px;
     }
     div.projectCard span.projectTitle {
       font-size: smaller;
