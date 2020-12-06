@@ -30,8 +30,20 @@ main =
         , view = view
         , update = update
         , subscriptions = \_ -> Sub.none
-        , onUrlRequest = \_ -> Never
-        , onUrlChange = \_ -> Never
+        , onUrlRequest =
+            \request ->
+                let
+                    _ =
+                        Debug.log "onUrlRequest" request
+                in
+                Never
+        , onUrlChange =
+            \urlChange ->
+                let
+                    _ =
+                        Debug.log "urlChange" urlChange
+                in
+                Never
         }
 
 
