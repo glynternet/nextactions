@@ -72,12 +72,16 @@ type AuthorizedRuntimeState
     = GettingBoardLists
     | ListsGetError String
     | SelectingList Lists
-    | GettingListCards
     | FindListError String
-    | CardsGetError String
+    | ListState ListState
     | CardGetError String
-    | Items Cards (Dict String Checklists)
     | MarkCheckitemDoneError String
+
+
+type ListState
+    = GettingListCards
+    | CardsGetError String
+    | Items Cards (Dict String Checklists)
 
 
 type alias Config =
@@ -254,37 +258,50 @@ authorizedRuntimeUpdate msg runtime =
                         )
 
         ListSelected listId ->
-            ( updateAuthRuntimeState runtime GettingListCards, getCards runtime.credentials listId )
+            ( updateAuthRuntimeState runtime <| ListState GettingListCards, getCards runtime.credentials listId )
 
         CardsReceived result ->
             (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case result of
                     Err httpErr ->
-                        ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr
+                        ( ListState <| CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr
                         , Cmd.none
                         )
 
                     Ok cards ->
-                        ( Items cards Dict.empty
+                        ( ListState <| Items cards Dict.empty
                         , Cmd.batch (List.map (\c -> getChecklists runtime.credentials c.id) cards)
                         )
 
         CardReceived result ->
             (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case runtime.state of
-                    Items cards _ ->
-                        case result of
-                            Err httpErr ->
-                                ( CardGetError <| "Error getting card: " ++ httpErrToString httpErr, Cmd.none )
+                    ListState listState ->
+                        case listState of
+                            Items cards _ ->
+                                case result of
+                                    Err httpErr ->
+                                        ( CardGetError <| "Error getting card: " ++ httpErrToString httpErr, Cmd.none )
 
-                            Ok card ->
-                                if List.member card cards then
-                                    ( runtime.state
-                                    , getChecklists runtime.credentials card.id
-                                    )
+                                    Ok card ->
+                                        if List.member card cards then
+                                            ( runtime.state
+                                            , getChecklists runtime.credentials card.id
+                                            )
 
-                                else
-                                    ( CardGetError <| "Received card is not known: " ++ card.name, Cmd.none )
+                                        else
+                                            ( CardGetError <| "Received card is not known: " ++ card.name, Cmd.none )
+
+                            CardsGetError err ->
+                                ( CardGetError err, Cmd.none )
+
+                            GettingListCards ->
+                                case result of
+                                    Err httpErr ->
+                                        ( CardGetError <| "Error getting card: " ++ httpErrToString httpErr, Cmd.none )
+
+                                    Ok card ->
+                                        ( CardGetError <| "Received card at unexpected time: " ++ card.name, Cmd.none )
 
                     _ ->
                         ( CardGetError "Received card at unexpected time", Cmd.none )
@@ -292,15 +309,20 @@ authorizedRuntimeUpdate msg runtime =
         ChecklistsReceived cardId result ->
             (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case runtime.state of
-                    Items cards checklists ->
-                        case result of
-                            Ok newChecklists ->
-                                ( Items cards (Dict.insert cardId newChecklists checklists)
-                                , Cmd.none
-                                )
+                    ListState listState ->
+                        case listState of
+                            Items cards checklists ->
+                                case result of
+                                    Ok newChecklists ->
+                                        ( ListState (Items cards (Dict.insert cardId newChecklists checklists))
+                                        , Cmd.none
+                                        )
 
-                            Err error ->
-                                ( ListsGetError <| httpErrToString error, Cmd.none )
+                                    Err error ->
+                                        ( ListsGetError <| httpErrToString error, Cmd.none )
+
+                            _ ->
+                                ( ListsGetError "Received checklists at unexpected time", Cmd.none )
 
                     _ ->
                         ( ListsGetError "Received checklists at unexpected time", Cmd.none )
@@ -311,15 +333,24 @@ authorizedRuntimeUpdate msg runtime =
         MarkCheckitemDoneResult cardId result ->
             (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case runtime.state of
-                    Items _ _ ->
-                        case result of
-                            Ok _ ->
-                                ( runtime.state
-                                , getCard runtime.credentials cardId
-                                )
+                    ListState listState ->
+                        case listState of
+                            Items _ _ ->
+                                case result of
+                                    Ok _ ->
+                                        ( runtime.state
+                                          -- this is a bit unnecessary here, we get a card and then get the checklists
+                                          -- from that but we can immediately get the checklists instead with the id
+                                          -- by doing
+                                          --, getChecklists runtime.credentials cardId
+                                        , getCard runtime.credentials cardId
+                                        )
 
-                            Err error ->
-                                ( MarkCheckitemDoneError <| httpErrToString error, Cmd.none )
+                                    Err error ->
+                                        ( MarkCheckitemDoneError <| httpErrToString error, Cmd.none )
+
+                            _ ->
+                                ( MarkCheckitemDoneError "MarkCheckitemDoneResult received at unexpected time", Cmd.none )
 
                     _ ->
                         ( MarkCheckitemDoneError "MarkCheckitemDoneResult received at unexpected time", Cmd.none )
@@ -671,13 +702,7 @@ viewAuthorized runtime =
                 (List.map (\l -> button (onClick <| ListSelected l.id) [ text l.name ]) lists)
             ]
 
-        GettingListCards ->
-            [ text <| "Loading projects... " ]
-
         FindListError err ->
-            [ text err ]
-
-        CardsGetError err ->
             [ text err ]
 
         CardGetError err ->
@@ -686,28 +711,36 @@ viewAuthorized runtime =
         MarkCheckitemDoneError err ->
             [ text err ]
 
-        Items cards cardChecklists ->
-            cards
-                |> List.filterMap
-                    (\card ->
-                        Dict.get card.id cardChecklists
-                            |> Maybe.map (\checklists -> ( card, checklistsToNextActionsResult checklists ))
-                    )
-                |> List.sortBy
-                    (\( _, nextActionsResult ) -> maybeNextActionsSortValue nextActionsResult)
-                |> List.map
-                    (\( card, res ) ->
-                        div
-                            [ class "projectCard" ]
-                        <|
-                            List.append
-                                [ span
-                                    (class "projectTitle" :: (onClick <| GoToProject card))
-                                    [ text <| card.name ]
-                                , br [] []
-                                ]
-                                (projectCard res card)
-                    )
+        ListState listState ->
+            case listState of
+                GettingListCards ->
+                    [ text <| "Loading projects... " ]
+
+                CardsGetError err ->
+                    [ text err ]
+
+                Items cards cardChecklists ->
+                    cards
+                        |> List.filterMap
+                            (\card ->
+                                Dict.get card.id cardChecklists
+                                    |> Maybe.map (\checklists -> ( card, checklistsToNextActionsResult checklists ))
+                            )
+                        |> List.sortBy
+                            (\( _, nextActionsResult ) -> maybeNextActionsSortValue nextActionsResult)
+                        |> List.map
+                            (\( card, res ) ->
+                                div
+                                    [ class "projectCard" ]
+                                <|
+                                    List.append
+                                        [ span
+                                            (class "projectTitle" :: (onClick <| GoToProject card))
+                                            [ text <| card.name ]
+                                        , br [] []
+                                        ]
+                                        (projectCard res card)
+                            )
 
 
 maybeNextActionsSortValue : NextActionsResult -> Float
