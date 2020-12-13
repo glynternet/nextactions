@@ -78,7 +78,7 @@ type AuthorizedRuntimeState
         , doneListId : Maybe String
         , state : ListState
         }
-    | MarkCheckitemDoneError String
+    | MarkCheckItemDoneError String
 
 
 type ListState
@@ -201,8 +201,8 @@ type Msg
     | ListSelected String
     | CardsReceived (Result Http.Error Cards)
     | ChecklistsReceived String (Result Http.Error Checklists)
-    | MarkCheckitemDone String String
-    | MarkCheckitemDoneResult String (Result Http.Error Checkitem)
+    | MarkCheckItemDone { cardId : String, checkItemId : String }
+    | MarkCheckItemDoneResult String (Result Http.Error CheckItem)
     | MoveProjectToDoneList { cardId : String, doneListId : String }
     | MoveProjectToDoneListResult String (Result Http.Error Card)
     | GoToProject Card
@@ -320,10 +320,10 @@ authorizedRuntimeUpdate msg runtime =
                     _ ->
                         ( ListsGetError "Received checklists at unexpected time", Cmd.none )
 
-        MarkCheckitemDone cardId checkitemId ->
-            ( Authorized runtime, putMarkCheckitemAsDone runtime.credentials cardId checkitemId )
+        MarkCheckItemDone { cardId, checkItemId } ->
+            ( Authorized runtime, putMarkCheckItemAsDone runtime.credentials cardId checkItemId )
 
-        MarkCheckitemDoneResult cardId result ->
+        MarkCheckItemDoneResult cardId result ->
             (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case runtime.state of
                     ListState listState ->
@@ -336,13 +336,13 @@ authorizedRuntimeUpdate msg runtime =
                                         )
 
                                     Err error ->
-                                        ( MarkCheckitemDoneError <| httpErrToString error, Cmd.none )
+                                        ( MarkCheckItemDoneError <| httpErrToString error, Cmd.none )
 
                             _ ->
-                                ( MarkCheckitemDoneError "MarkCheckitemDoneResult received at unexpected time", Cmd.none )
+                                ( MarkCheckItemDoneError "MarkCheckItemDoneResult received at unexpected time", Cmd.none )
 
                     _ ->
-                        ( MarkCheckitemDoneError "MarkCheckitemDoneResult received at unexpected time", Cmd.none )
+                        ( MarkCheckItemDoneError "MarkCheckItemDoneResult received at unexpected time", Cmd.none )
 
         MoveProjectToDoneListResult _ result ->
             (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
@@ -473,13 +473,13 @@ httpErrIsUnauthorised error =
             False
 
 
-putMarkCheckitemAsDone : RequestCredentials -> String -> String -> Cmd Msg
-putMarkCheckitemAsDone credentials cardId checkitemId =
+putMarkCheckItemAsDone : RequestCredentials -> String -> String -> Cmd Msg
+putMarkCheckItemAsDone credentials cardId checkItemId =
     putItems credentials
-        ("/cards/" ++ cardId ++ "/checkItem/" ++ checkitemId)
+        ("/cards/" ++ cardId ++ "/checkItem/" ++ checkItemId)
         [ "state=complete" ]
-        (MarkCheckitemDoneResult cardId)
-        checkitemDecoder
+        (MarkCheckItemDoneResult cardId)
+        checkItemDecoder
 
 
 putMoveCardToList : RequestCredentials -> String -> String -> Cmd Msg
@@ -561,7 +561,7 @@ type alias Checklists =
 type alias Checklist =
     { id : String
     , name : String
-    , checkItems : Checkitems
+    , checkItems : CheckItems
     }
 
 
@@ -575,14 +575,14 @@ checklistDecoder =
     map3 Checklist
         (field "id" string)
         (field "name" string)
-        (field "checkItems" checkitemsDecoder)
+        (field "checkItems" checkItemsDecoder)
 
 
-type alias Checkitems =
-    List Checkitem
+type alias CheckItems =
+    List CheckItem
 
 
-type alias Checkitem =
+type alias CheckItem =
     { pos : Float
     , name : String
     , id : String
@@ -590,14 +590,14 @@ type alias Checkitem =
     }
 
 
-checkitemsDecoder : Decoder Checkitems
-checkitemsDecoder =
-    list checkitemDecoder
+checkItemsDecoder : Decoder CheckItems
+checkItemsDecoder =
+    list checkItemDecoder
 
 
-checkitemDecoder : Decoder Checkitem
-checkitemDecoder =
-    map4 Checkitem
+checkItemDecoder : Decoder CheckItem
+checkItemDecoder =
+    map4 CheckItem
         (field "pos" float)
         (field "name" string)
         (field "id" string)
@@ -622,13 +622,13 @@ completePercent nextActions =
 
 
 type alias Actions =
-    { nextAction : Checkitem
+    { nextAction : CheckItem
     , total : Int
     , incomplete : Int
     }
 
 
-checklistItemsToNextActions : Checkitems -> NextActions
+checklistItemsToNextActions : CheckItems -> NextActions
 checklistItemsToNextActions items =
     case items of
         [] ->
@@ -732,7 +732,7 @@ viewAuthorized runtime =
                 )
             ]
 
-        MarkCheckitemDoneError err ->
+        MarkCheckItemDoneError err ->
             [ text err ]
 
         ListState listState ->
@@ -817,7 +817,7 @@ projectCard result card maybeDoneListId =
                             bodyWithButtons
                                 card
                                 [ text <| incompleteActions.nextAction.name, smallTag "✨ last one! ✨" ]
-                                [ markCheckitemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
+                                [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
 
                         else
                             bodyWithButtons
@@ -825,7 +825,7 @@ projectCard result card maybeDoneListId =
                                 [ text <| incompleteActions.nextAction.name
                                 , smallTag <| "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
                                 ]
-                                [ markCheckitemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
+                                [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
                     , Progress.progress [ Progress.value <| completePercent incompleteActions ]
                     ]
 
@@ -845,7 +845,7 @@ projectCard result card maybeDoneListId =
                         bodyWithButtons
                             card
                             [ text <| "😌 not started: " ++ incompleteActions.nextAction.name ]
-                            [ markCheckitemDoneButton card
+                            [ markCheckItemDoneButton card
                                 incompleteActions.nextAction
                                 (markCheckitemDoneButtonText incompleteActions)
                             ]
@@ -876,9 +876,11 @@ smallTag text =
     span [ class "smallTag" ] [ Html.text text ]
 
 
-markCheckitemDoneButton : Card -> Checkitem -> String -> Html Msg
-markCheckitemDoneButton card checkItem text =
-    button (class "markCheckitemDoneButton" :: (onClick <| MarkCheckitemDone card.id checkItem.id)) [ Html.text text ]
+markCheckItemDoneButton : Card -> CheckItem -> String -> Html Msg
+markCheckItemDoneButton card checkItem text =
+    button
+        (class "markCheckItemDoneButton" :: (onClick <| MarkCheckItemDone { cardId = card.id, checkItemId = checkItem.id }))
+        [ Html.text text ]
 
 
 moveProjectToDoneListButton : Card -> String -> Html Msg

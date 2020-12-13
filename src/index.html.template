@@ -42,7 +42,7 @@
       font-size: smaller;
       color: #74737a;
     }
-    div.projectCard button.markCheckitemDoneButton {
+    div.projectCard button.markCheckItemDoneButton {
       float: right;
     }
     div.projectCard div.cardBodyWithButtons {
