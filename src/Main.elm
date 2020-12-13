@@ -74,7 +74,6 @@ type AuthorizedRuntimeState
     | SelectingList Lists
     | FindListError String
     | ListState ListState
-    | CardGetError String
     | MarkCheckitemDoneError String
 
 
@@ -196,7 +195,6 @@ type Msg
     | ListsReceived (Result Http.Error Lists)
     | ListSelected String
     | CardsReceived (Result Http.Error Cards)
-    | CardReceived (Result Http.Error Card)
     | ChecklistsReceived String (Result Http.Error Checklists)
     | MarkCheckitemDone String String
     | MarkCheckitemDoneResult String (Result Http.Error Checkitem)
@@ -273,39 +271,6 @@ authorizedRuntimeUpdate msg runtime =
                         , Cmd.batch (List.map (\c -> getChecklists runtime.credentials c.id) cards)
                         )
 
-        CardReceived result ->
-            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
-                case runtime.state of
-                    ListState listState ->
-                        case listState of
-                            Items cards _ ->
-                                case result of
-                                    Err httpErr ->
-                                        ( CardGetError <| "Error getting card: " ++ httpErrToString httpErr, Cmd.none )
-
-                                    Ok card ->
-                                        if List.member card cards then
-                                            ( runtime.state
-                                            , getChecklists runtime.credentials card.id
-                                            )
-
-                                        else
-                                            ( CardGetError <| "Received card is not known: " ++ card.name, Cmd.none )
-
-                            CardsGetError err ->
-                                ( CardGetError err, Cmd.none )
-
-                            GettingListCards ->
-                                case result of
-                                    Err httpErr ->
-                                        ( CardGetError <| "Error getting card: " ++ httpErrToString httpErr, Cmd.none )
-
-                                    Ok card ->
-                                        ( CardGetError <| "Received card at unexpected time: " ++ card.name, Cmd.none )
-
-                    _ ->
-                        ( CardGetError "Received card at unexpected time", Cmd.none )
-
         ChecklistsReceived cardId result ->
             (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case runtime.state of
@@ -339,11 +304,7 @@ authorizedRuntimeUpdate msg runtime =
                                 case result of
                                     Ok _ ->
                                         ( runtime.state
-                                          -- this is a bit unnecessary here, we get a card and then get the checklists
-                                          -- from that but we can immediately get the checklists instead with the id
-                                          -- by doing
-                                          --, getChecklists runtime.credentials cardId
-                                        , getCard runtime.credentials cardId
+                                        , getChecklists runtime.credentials cardId
                                         )
 
                                     Err error ->
@@ -401,14 +362,6 @@ getCards credentials listId =
         ("/lists/" ++ listId ++ "/cards")
         CardsReceived
         cardsDecoder
-
-
-getCard : RequestCredentials -> String -> Cmd Msg
-getCard credentials cardId =
-    getItems credentials
-        ("/cards/" ++ cardId)
-        CardReceived
-        cardDecoder
 
 
 getChecklists : RequestCredentials -> String -> Cmd Msg
@@ -703,9 +656,6 @@ viewAuthorized runtime =
             ]
 
         FindListError err ->
-            [ text err ]
-
-        CardGetError err ->
             [ text err ]
 
         MarkCheckitemDoneError err ->
