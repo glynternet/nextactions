@@ -72,7 +72,6 @@ type AuthorizedRuntimeState
     = GettingBoardLists
     | ListsGetError String
     | SelectingList Lists
-    | FindListError String
     | ListState ListState
     | MarkCheckitemDoneError String
 
@@ -654,9 +653,6 @@ viewAuthorized runtime =
                 [ class "listSelectionContainer" ]
                 (List.map (\l -> button (onClick <| ListSelected l.id) [ text l.name ]) lists)
             ]
-
-        FindListError err ->
-            [ text err ]
 
         MarkCheckitemDoneError err ->
             [ text err ]
