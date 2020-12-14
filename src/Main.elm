@@ -289,6 +289,18 @@ authorizedRuntimeUpdate msg runtime =
                                         , Cmd.batch (List.map (\c -> getChecklists runtime.credentials c.id) cards)
                                         )
 
+                            Items _ _ ->
+                                case result of
+                                    Err httpErr ->
+                                        ( ListState { listState | state = CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr }
+                                        , Cmd.none
+                                        )
+
+                                    Ok cards ->
+                                        ( ListState { listState | state = Items cards Dict.empty }
+                                        , Cmd.batch (List.map (\c -> getChecklists runtime.credentials c.id) cards)
+                                        )
+
                             _ ->
                                 ( ListState { listState | state = CardsGetError <| "Received cards at unexpected time" }
                                 , Cmd.none
@@ -355,7 +367,7 @@ authorizedRuntimeUpdate msg runtime =
                     Ok _ ->
                         case runtime.state of
                             ListState listState ->
-                                ( ListState { listState | state = GettingListCards }, getCards runtime.credentials listState.listId )
+                                ( ListState listState, getCards runtime.credentials listState.listId )
 
                             _ ->
                                 ( ListState { listId = "", doneListId = Nothing, state = MoveItemToDoneListError "MoveProjectToDoneListResult received at unexpected time" }
