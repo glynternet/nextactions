@@ -199,14 +199,18 @@ type Msg
     | GetLists String
     | ListsReceived (Result Http.Error Lists)
     | ListSelected String
-    | CardsReceived (Result Http.Error Cards)
+    | ListMsg ListMsg
+    | GoToProject Card
+    | ReceivedUnauthorisedResponse
+
+
+type ListMsg
+    = CardsReceived (Result Http.Error Cards)
     | ChecklistsReceived String (Result Http.Error Checklists)
     | MarkCheckItemDone { cardId : String, checkItemId : String }
     | MarkCheckItemDoneResult String (Result Http.Error CheckItem)
     | MoveProjectToDoneList { cardId : String, doneListId : String }
     | MoveProjectToDoneListResult String (Result Http.Error Card)
-    | GoToProject Card
-    | ReceivedUnauthorisedResponse
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -272,107 +276,112 @@ authorizedRuntimeUpdate msg runtime =
             , getCards runtime.credentials listId
             )
 
-        CardsReceived result ->
-            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
-                case runtime.state of
-                    ListState listState ->
-                        case listState.state of
-                            GettingListCards ->
-                                case result of
-                                    Err httpErr ->
-                                        ( ListState { listState | state = CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr }
+        ListMsg listMsg ->
+            case listMsg of
+                CardsReceived result ->
+                    (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
+                        case runtime.state of
+                            ListState listState ->
+                                case listState.state of
+                                    GettingListCards ->
+                                        case result of
+                                            Err httpErr ->
+                                                ( ListState { listState | state = CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr }
+                                                , Cmd.none
+                                                )
+
+                                            Ok cards ->
+                                                ( ListState { listState | state = Items cards Dict.empty }
+                                                , Cmd.batch (List.map (\c -> getChecklists runtime.credentials c.id) cards)
+                                                )
+
+                                    Items _ _ ->
+                                        case result of
+                                            Err httpErr ->
+                                                ( ListState { listState | state = CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr }
+                                                , Cmd.none
+                                                )
+
+                                            Ok cards ->
+                                                ( ListState { listState | state = Items cards Dict.empty }
+                                                , Cmd.batch (List.map (\c -> getChecklists runtime.credentials c.id) cards)
+                                                )
+
+                                    _ ->
+                                        ( ListState { listState | state = CardsGetError <| "Received cards at unexpected time" }
                                         , Cmd.none
-                                        )
-
-                                    Ok cards ->
-                                        ( ListState { listState | state = Items cards Dict.empty }
-                                        , Cmd.batch (List.map (\c -> getChecklists runtime.credentials c.id) cards)
-                                        )
-
-                            Items _ _ ->
-                                case result of
-                                    Err httpErr ->
-                                        ( ListState { listState | state = CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr }
-                                        , Cmd.none
-                                        )
-
-                                    Ok cards ->
-                                        ( ListState { listState | state = Items cards Dict.empty }
-                                        , Cmd.batch (List.map (\c -> getChecklists runtime.credentials c.id) cards)
                                         )
 
                             _ ->
-                                ( ListState { listState | state = CardsGetError <| "Received cards at unexpected time" }
+                                ( ListState { listId = "", doneListId = Nothing, state = CardsGetError <| "Received cards at unexpected time, not in list state" }
                                 , Cmd.none
                                 )
 
-                    _ ->
-                        ( ListState { listId = "", doneListId = Nothing, state = CardsGetError <| "Received cards at unexpected time, not in list state" }
-                        , Cmd.none
-                        )
+                ChecklistsReceived cardId result ->
+                    (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
+                        case runtime.state of
+                            ListState listState ->
+                                case listState.state of
+                                    Items cards checklists ->
+                                        case result of
+                                            Ok newChecklists ->
+                                                ( ListState { listState | state = Items cards (Dict.insert cardId newChecklists checklists) }
+                                                , Cmd.none
+                                                )
 
-        ChecklistsReceived cardId result ->
-            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
-                case runtime.state of
-                    ListState listState ->
-                        case listState.state of
-                            Items cards checklists ->
-                                case result of
-                                    Ok newChecklists ->
-                                        ( ListState { listState | state = Items cards (Dict.insert cardId newChecklists checklists) }
-                                        , Cmd.none
-                                        )
+                                            Err error ->
+                                                ( ListsGetError <| httpErrToString error, Cmd.none )
 
-                                    Err error ->
-                                        ( ListsGetError <| httpErrToString error, Cmd.none )
+                                    _ ->
+                                        ( ListsGetError "Received checklists at unexpected time", Cmd.none )
 
                             _ ->
                                 ( ListsGetError "Received checklists at unexpected time", Cmd.none )
 
-                    _ ->
-                        ( ListsGetError "Received checklists at unexpected time", Cmd.none )
+                MarkCheckItemDone { cardId, checkItemId } ->
+                    ( Authorized runtime, putMarkCheckItemAsDone runtime.credentials cardId checkItemId )
 
-        MarkCheckItemDone { cardId, checkItemId } ->
-            ( Authorized runtime, putMarkCheckItemAsDone runtime.credentials cardId checkItemId )
+                MarkCheckItemDoneResult cardId result ->
+                    (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
+                        case runtime.state of
+                            ListState listState ->
+                                case listState.state of
+                                    Items _ _ ->
+                                        case result of
+                                            Ok _ ->
+                                                ( runtime.state
+                                                , getChecklists runtime.credentials cardId
+                                                )
 
-        MarkCheckItemDoneResult cardId result ->
-            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
-                case runtime.state of
-                    ListState listState ->
-                        case listState.state of
-                            Items _ _ ->
-                                case result of
-                                    Ok _ ->
-                                        ( runtime.state
-                                        , getChecklists runtime.credentials cardId
-                                        )
+                                            Err error ->
+                                                ( MarkCheckItemDoneError <| httpErrToString error, Cmd.none )
 
-                                    Err error ->
-                                        ( MarkCheckItemDoneError <| httpErrToString error, Cmd.none )
+                                    _ ->
+                                        ( MarkCheckItemDoneError "MarkCheckItemDoneResult received at unexpected time", Cmd.none )
 
                             _ ->
                                 ( MarkCheckItemDoneError "MarkCheckItemDoneResult received at unexpected time", Cmd.none )
 
-                    _ ->
-                        ( MarkCheckItemDoneError "MarkCheckItemDoneResult received at unexpected time", Cmd.none )
-
-        MoveProjectToDoneListResult _ result ->
-            (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
-                case result of
-                    Err error ->
-                        ( ListState { listId = "", doneListId = Nothing, state = MoveItemToDoneListError <| httpErrToString error }
-                        , Cmd.none
-                        )
-
-                    Ok _ ->
-                        case runtime.state of
-                            ListState listState ->
-                                ( ListState listState, getCards runtime.credentials listState.listId )
-
-                            _ ->
-                                ( ListState { listId = "", doneListId = Nothing, state = MoveItemToDoneListError "MoveProjectToDoneListResult received at unexpected time" }
+                MoveProjectToDoneListResult _ result ->
+                    (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
+                        case result of
+                            Err error ->
+                                ( ListState { listId = "", doneListId = Nothing, state = MoveItemToDoneListError <| httpErrToString error }
                                 , Cmd.none
                                 )
+
+                            Ok _ ->
+                                case runtime.state of
+                                    ListState listState ->
+                                        ( ListState listState, getCards runtime.credentials listState.listId )
+
+                                    _ ->
+                                        ( ListState { listId = "", doneListId = Nothing, state = MoveItemToDoneListError "MoveProjectToDoneListResult received at unexpected time" }
+                                        , Cmd.none
+                                        )
+
+                MoveProjectToDoneList { cardId, doneListId } ->
+                    ( Authorized runtime, putMoveCardToList runtime.credentials cardId doneListId )
 
         GoToProject card ->
             ( Authorized runtime, Browser.Navigation.load <| "https://trello.com/c/" ++ card.id )
@@ -381,9 +390,6 @@ authorizedRuntimeUpdate msg runtime =
             --TODO: should probably show that there has been an error here
             --TODO: remove stored token
             ( Unauthorized, Cmd.none )
-
-        MoveProjectToDoneList { cardId, doneListId } ->
-            ( Authorized runtime, putMoveCardToList runtime.credentials cardId doneListId )
 
 
 updateAuthRuntimeState : AuthorizedRuntime -> AuthorizedRuntimeState -> Runtime
@@ -431,7 +437,7 @@ getCards : RequestCredentials -> String -> Cmd Msg
 getCards credentials listId =
     getItems credentials
         ("/lists/" ++ listId ++ "/cards")
-        CardsReceived
+        (CardsReceived >> ListMsg)
         cardsDecoder
 
 
@@ -439,7 +445,7 @@ getChecklists : RequestCredentials -> String -> Cmd Msg
 getChecklists credentials cardId =
     getItems credentials
         ("/cards/" ++ cardId ++ "/checklists")
-        (ChecklistsReceived cardId)
+        (ChecklistsReceived cardId >> ListMsg)
         checklistsDecoder
 
 
@@ -490,7 +496,7 @@ putMarkCheckItemAsDone credentials cardId checkItemId =
     putItems credentials
         ("/cards/" ++ cardId ++ "/checkItem/" ++ checkItemId)
         [ "state=complete" ]
-        (MarkCheckItemDoneResult cardId)
+        (MarkCheckItemDoneResult cardId >> ListMsg)
         checkItemDecoder
 
 
@@ -499,7 +505,7 @@ putMoveCardToList credentials cardId newListId =
     putItems credentials
         ("/cards/" ++ cardId)
         [ "state=complete", "idList=" ++ newListId, "pos=top" ]
-        (MoveProjectToDoneListResult cardId)
+        (MoveProjectToDoneListResult cardId >> ListMsg)
         cardDecoder
 
 
@@ -891,14 +897,14 @@ smallTag text =
 markCheckItemDoneButton : Card -> CheckItem -> String -> Html Msg
 markCheckItemDoneButton card checkItem text =
     button
-        (class "markCheckItemDoneButton" :: (onClick <| MarkCheckItemDone { cardId = card.id, checkItemId = checkItem.id }))
+        (class "markCheckItemDoneButton" :: (onClick <| ListMsg <| MarkCheckItemDone { cardId = card.id, checkItemId = checkItem.id }))
         [ Html.text text ]
 
 
 moveProjectToDoneListButton : Card -> String -> Html Msg
 moveProjectToDoneListButton card doneListId =
     button
-        (class "moveProjectToDoneListButton" :: (onClick <| MoveProjectToDoneList { cardId = card.id, doneListId = doneListId }))
+        (class "moveProjectToDoneListButton" :: (onClick <| ListMsg <| MoveProjectToDoneList { cardId = card.id, doneListId = doneListId }))
         [ Html.text "Archive!" ]
 
 
