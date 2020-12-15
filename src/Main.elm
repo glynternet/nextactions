@@ -78,13 +78,13 @@ type AuthorizedRuntimeState
         , doneListId : Maybe String
         , state : ListState
         }
-    | MarkCheckItemDoneError String
 
 
 type ListState
     = GettingListCards
     | CardsGetError String
     | Items Cards (Dict String Checklists)
+    | MarkCheckItemDoneError String
     | MoveItemToDoneListError String
 
 
@@ -367,13 +367,13 @@ listStateUpdate listMsg runtime =
                                         )
 
                                     Err error ->
-                                        ( MarkCheckItemDoneError <| httpErrToString error, Cmd.none )
+                                        ( ListState { listState | state = MarkCheckItemDoneError <| httpErrToString error }, Cmd.none )
 
                             _ ->
-                                ( MarkCheckItemDoneError "MarkCheckItemDoneResult received at unexpected time", Cmd.none )
+                                ( ListState { listState | state = MarkCheckItemDoneError "MarkCheckItemDoneResult received at unexpected time" }, Cmd.none )
 
                     _ ->
-                        ( MarkCheckItemDoneError "MarkCheckItemDoneResult received at unexpected time", Cmd.none )
+                        ( ListState { listId = "", doneListId = Nothing, state = MarkCheckItemDoneError "MarkCheckItemDoneResult received at unexpected time" }, Cmd.none )
 
         MoveProjectToDoneListResult _ result ->
             (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
@@ -755,13 +755,13 @@ viewAuthorized runtime =
                 )
             ]
 
-        MarkCheckItemDoneError err ->
-            [ text err ]
-
         ListState listState ->
             case listState.state of
                 GettingListCards ->
                     [ text <| "Loading projects... " ]
+
+                MarkCheckItemDoneError err ->
+                    [ text err ]
 
                 CardsGetError err ->
                     [ text err ]
