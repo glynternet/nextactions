@@ -83,10 +83,55 @@ type AuthorizedRuntimeState
 type ListState
     = GettingListCards
     | CardsGetError String
-    | Items Cards (Dict String Checklists)
+    | Items Items
     | MarkCheckItemDoneError String
     | MoveItemToDoneListError String
     | ChecklistsGetError String
+    | ChecklistsUpdateError String
+
+
+type alias Items =
+    Dict String ( Card, NextActionsModel )
+
+
+type NextActionsModel
+    = NextActions NextActions
+    | Loading
+    | NoChecklists
+    | NoActionsChecklists
+    | TooManyActionsChecklists (List String)
+
+
+itemsFromCards : Cards -> Items
+itemsFromCards =
+    List.map (\card -> ( card.id, ( card, Loading ) ))
+        >> Dict.fromList
+
+
+updateCardChecklists : String -> Checklists -> Items -> Result String Items
+updateCardChecklists cardId checklists items =
+    Dict.get cardId items
+        |> Result.fromMaybe ("No card exists at ID: " ++ cardId)
+        |> Result.map (\( card, _ ) -> Dict.insert cardId ( card, checklistsToNextActionsResult checklists ) items)
+
+
+checklistsToNextActionsResult : Checklists -> NextActionsModel
+checklistsToNextActionsResult cls =
+    case cls of
+        [] ->
+            NoChecklists
+
+        _ ->
+            case List.filter (\cl -> List.member cl.name [ "Checklist", "Actions", "ToDo" ]) cls of
+                [] ->
+                    NoActionsChecklists
+
+                [ cl ] ->
+                    checklistItemsToNextActions cl.checkItems
+                        |> NextActions
+
+                candidates ->
+                    TooManyActionsChecklists <| List.map (\cl -> cl.name) candidates
 
 
 type alias Config =
@@ -316,11 +361,11 @@ listStateUpdate listMsg listId listState =
                             )
 
                         Ok cards ->
-                            ( Items cards Dict.empty
+                            ( Items <| itemsFromCards cards
                             , \credentials -> Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
                             )
 
-                Items _ _ ->
+                Items _ ->
                     case result of
                         Err httpErr ->
                             ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr
@@ -328,7 +373,7 @@ listStateUpdate listMsg listId listState =
                             )
 
                         Ok cards ->
-                            ( Items cards Dict.empty
+                            ( Items <| itemsFromCards cards
                             , \credentials -> Cmd.batch (List.map (\c -> getChecklists credentials c.id) cards)
                             )
 
@@ -339,10 +384,12 @@ listStateUpdate listMsg listId listState =
 
         ChecklistsReceived cardId result ->
             case listState of
-                Items cards checklists ->
+                Items items ->
                     case result of
                         Ok newChecklists ->
-                            ( Items cards (Dict.insert cardId newChecklists checklists)
+                            ( updateCardChecklists cardId newChecklists items
+                                |> Result.Extra.mapBoth ChecklistsUpdateError Items
+                                |> Result.Extra.merge
                             , \_ -> Cmd.none
                             )
 
@@ -357,7 +404,7 @@ listStateUpdate listMsg listId listState =
 
         MarkCheckItemDoneResult cardId result ->
             case listState of
-                Items _ _ ->
+                Items _ ->
                     case result of
                         Ok _ ->
                             ( listState
@@ -665,32 +712,6 @@ checklistItemsToNextActions items =
                             Actions first itemsLength incompletesLength
 
 
-type NextActionsResult
-    = NoChecklists
-    | NoActionsChecklists
-    | TooManyActionsChecklists (List String)
-    | NextActions NextActions
-
-
-checklistsToNextActionsResult : Checklists -> NextActionsResult
-checklistsToNextActionsResult cls =
-    case cls of
-        [] ->
-            NoChecklists
-
-        _ ->
-            case List.filter (\cl -> List.member cl.name [ "Checklist", "Actions", "ToDo" ]) cls of
-                [] ->
-                    NoActionsChecklists
-
-                [ cl ] ->
-                    checklistItemsToNextActions cl.checkItems
-                        |> NextActions
-
-                candidates ->
-                    TooManyActionsChecklists <| List.map (\cl -> cl.name) candidates
-
-
 
 -- VIEW
 
@@ -753,13 +774,8 @@ viewAuthorized runtime =
                 CardsGetError err ->
                     [ text err ]
 
-                Items cards cardChecklists ->
-                    cards
-                        |> List.filterMap
-                            (\card ->
-                                Dict.get card.id cardChecklists
-                                    |> Maybe.map (\checklists -> ( card, checklistsToNextActionsResult checklists ))
-                            )
+                Items items ->
+                    Dict.values items
                         |> List.sortBy
                             (\( _, nextActionsResult ) -> maybeNextActionsSortValue nextActionsResult)
                         |> List.map
@@ -782,8 +798,11 @@ viewAuthorized runtime =
                 ChecklistsGetError err ->
                     [ text err ]
 
+                ChecklistsUpdateError err ->
+                    [ text err ]
 
-maybeNextActionsSortValue : NextActionsResult -> Float
+
+maybeNextActionsSortValue : NextActionsModel -> Float
 maybeNextActionsSortValue nasRes =
     case nasRes of
         NoActionsChecklists ->
@@ -809,8 +828,11 @@ maybeNextActionsSortValue nasRes =
                 Backlogged _ ->
                     7
 
+        Loading ->
+            8
 
-projectCard : NextActionsResult -> Card -> Maybe String -> List (Html Msg)
+
+projectCard : NextActionsModel -> Card -> Maybe String -> List (Html Msg)
 projectCard result card maybeDoneListId =
     case result of
         NoChecklists ->
@@ -863,6 +885,9 @@ projectCard result card maybeDoneListId =
                                 (markCheckitemDoneButtonText incompleteActions)
                             ]
                     ]
+
+        Loading ->
+            [ span (onClick <| GoToProject card) <| [ text "⏳ loading..." ] ]
 
 
 markCheckitemDoneButtonText : Actions -> String
