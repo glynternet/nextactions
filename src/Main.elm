@@ -848,46 +848,43 @@ projectCard result card maybeDoneListId =
             case nas of
                 InProgress incompleteActions ->
                     [ div [ class "cardBodyWithButtons" ] <|
-                        if incompleteActions.incomplete == 1 then
-                            bodyWithButtons
-                                card
-                                [ text <| incompleteActions.nextAction.name, smallTag "✨ last one! ✨" ]
-                                [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
-
-                        else
-                            bodyWithButtons
-                                card
-                                [ text <| incompleteActions.nextAction.name
-                                , smallTag <| "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
-                                ]
-                                [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
+                        bodyWithButtons
+                            card
+                            [ text <| incompleteActions.nextAction.name, actionsSmallTag incompleteActions ]
+                            [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
                     , Progress.progress [ Progress.value <| completePercent incompleteActions ]
+                    ]
+
+                Backlogged incompleteActions ->
+                    [ div [ class "cardBodyWithButtons" ] <|
+                        bodyWithButtons
+                            card
+                            [ text <| "😌 not started: " ++ incompleteActions.nextAction.name, actionsSmallTag incompleteActions ]
+                            [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
                     ]
 
                 Complete ->
                     [ div [ class "cardBodyWithButtons" ] <|
                         bodyWithButtons
                             card
-                            [ text "🤪 complete!" ]
+                            [ text "\u{1F92A} complete!" ]
                             (maybeDoneListId |> Maybe.map (\id -> [ moveProjectToDoneListButton card id ]) |> Maybe.withDefault [])
                     ]
 
                 EmptyList ->
-                    [ span (onClick <| GoToProject card) <| [ text <| "🧐 actions list has no items" ] ]
-
-                Backlogged incompleteActions ->
-                    [ div [ class "cardBodyWithButtons" ] <|
-                        bodyWithButtons
-                            card
-                            [ text <| "😌 not started: " ++ incompleteActions.nextAction.name ]
-                            [ markCheckItemDoneButton card
-                                incompleteActions.nextAction
-                                (markCheckitemDoneButtonText incompleteActions)
-                            ]
-                    ]
+                    [ span (onClick <| GoToProject card) <| [ text <| "\u{1F9D0} actions list has no items" ] ]
 
         Loading ->
             [ span (onClick <| GoToProject card) <| [ text "⏳ loading..." ] ]
+
+
+actionsSmallTag : Actions -> Html Msg
+actionsSmallTag actions =
+    if actions.incomplete == 1 then
+        smallTag "✨ last one! ✨"
+
+    else
+        smallTag <| "+" ++ (String.fromInt <| actions.incomplete - 1)
 
 
 markCheckitemDoneButtonText : Actions -> String
