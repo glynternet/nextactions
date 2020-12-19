@@ -554,22 +554,22 @@ checkitemDecoder =
 
 type NextActions
     = Complete
-    | InProgress InProgressActions
-    | Backlogged Checkitem
+    | InProgress Actions
+    | Backlogged Actions
     | EmptyList
 
 
-completeNormalisedPercent : InProgressActions -> Float
+completeNormalisedPercent : Actions -> Float
 completeNormalisedPercent nextActions =
     1 - toFloat nextActions.incomplete / toFloat nextActions.total
 
 
-completePercent : InProgressActions -> Float
+completePercent : Actions -> Float
 completePercent nextActions =
     completeNormalisedPercent nextActions * 100
 
 
-type alias InProgressActions =
+type alias Actions =
     { nextAction : Checkitem
     , total : Int
     , incomplete : Int
@@ -596,11 +596,11 @@ checklistItemsToNextActions items =
                             List.length items
                     in
                     if incompletesLength == itemsLength then
-                        Backlogged first
+                        Backlogged <| Actions first itemsLength incompletesLength
 
                     else
                         InProgress <|
-                            InProgressActions first itemsLength incompletesLength
+                            Actions first itemsLength incompletesLength
 
 
 type NextActionsResult
@@ -757,7 +757,7 @@ projectCard result card =
                             bodyWithButtons
                                 card
                                 [ text <| incompleteActions.nextAction.name, smallTag "✨ last one! ✨" ]
-                                [ markCheckitemDoneButton card incompleteActions.nextAction "Finish!" ]
+                                [ markCheckitemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
 
                         else
                             bodyWithButtons
@@ -765,7 +765,7 @@ projectCard result card =
                                 [ text <| incompleteActions.nextAction.name
                                 , smallTag <| "+" ++ (String.fromInt <| incompleteActions.incomplete - 1)
                                 ]
-                                [ markCheckitemDoneButton card incompleteActions.nextAction "Next!" ]
+                                [ markCheckitemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
                     , Progress.progress [ Progress.value <| completePercent incompleteActions ]
                     ]
 
@@ -775,13 +775,28 @@ projectCard result card =
                 EmptyList ->
                     [ span (onClick <| GoToProject card) <| [ text <| "\u{1F9D0} actions list has no items" ] ]
 
-                Backlogged first ->
+                Backlogged incompleteActions ->
                     [ div [ class "cardBodyWithButtons" ] <|
                         bodyWithButtons
                             card
-                            [ text <| "😌 not started: " ++ first.name ]
-                            [ markCheckitemDoneButton card first "Started!" ]
+                            [ text <| "😌 not started: " ++ incompleteActions.nextAction.name ]
+                            [ markCheckitemDoneButton card
+                                incompleteActions.nextAction
+                                (markCheckitemDoneButtonText incompleteActions)
+                            ]
                     ]
+
+
+markCheckitemDoneButtonText : Actions -> String
+markCheckitemDoneButtonText actions =
+    if actions.incomplete == 1 then
+        "Finished!"
+
+    else if actions.incomplete == actions.total then
+        "Started!"
+
+    else
+        "Next!"
 
 
 bodyWithButtons : Card -> List (Html Msg) -> List (Html Msg) -> List (Html Msg)
