@@ -744,7 +744,7 @@ projectCard result card =
             [ span (onClick <| GoToProject card) <| [ text "️😖 no lists" ] ]
 
         NoActionsChecklists ->
-            [ span (onClick <| GoToProject card) <| [ text "\u{1F9D0} no actions list" ] ]
+            [ span (onClick <| GoToProject card) <| [ text "🧐 no actions list" ] ]
 
         TooManyActionsChecklists names ->
             [ span (onClick <| GoToProject card) <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
@@ -770,10 +770,10 @@ projectCard result card =
                     ]
 
                 Complete ->
-                    [ span (onClick <| GoToProject card) <| [ text "\u{1F92A} complete!" ] ]
+                    [ span (onClick <| GoToProject card) <| [ text "🤪 complete!" ] ]
 
                 EmptyList ->
-                    [ span (onClick <| GoToProject card) <| [ text <| "\u{1F9D0} actions list has no items" ] ]
+                    [ span (onClick <| GoToProject card) <| [ text <| "🧐 actions list has no items" ] ]
 
                 Backlogged incompleteActions ->
                     [ div [ class "cardBodyWithButtons" ] <|
