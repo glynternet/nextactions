@@ -743,7 +743,7 @@ checklistItemsToNextActions items =
 
 
 subscriptions model =
-    Time.every 60000 (\_ -> Debug.log "BackgroundPoll" BackgroundPoll)
+    Time.every 60000 (always BackgroundPoll)
 
 
 
