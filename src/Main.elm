@@ -97,7 +97,11 @@ type alias Items =
 type NextActionsModel
     = NextActions NextActions
     | Loading
-    | NoChecklists
+    | Err NextActionModelErr
+
+
+type NextActionModelErr
+    = NoChecklists
     | NoActionsChecklists
     | TooManyActionsChecklists (List String)
 
@@ -119,19 +123,19 @@ checklistsToNextActionsResult : Checklists -> NextActionsModel
 checklistsToNextActionsResult cls =
     case cls of
         [] ->
-            NoChecklists
+            Err NoChecklists
 
         _ ->
             case List.filter (\cl -> List.member cl.name [ "Checklist", "Actions", "ToDo" ]) cls of
                 [] ->
-                    NoActionsChecklists
+                    Err NoActionsChecklists
 
                 [ cl ] ->
                     checklistItemsToNextActions cl.checkItems
                         |> NextActions
 
                 candidates ->
-                    TooManyActionsChecklists <| List.map (\cl -> cl.name) candidates
+                    Err <| TooManyActionsChecklists <| List.map (\cl -> cl.name) candidates
 
 
 type alias Config =
@@ -178,7 +182,7 @@ init configValue url _ =
                                 , Cmd.batch [ storeToken token, getLists credentials config.boardId ]
                                 )
 
-                            Err err ->
+                            Result.Err err ->
                                 ( Model (Error err) apiConfig
                                 , Cmd.none
                                 )
@@ -207,7 +211,7 @@ init configValue url _ =
                             )
                     )
 
-        Err err ->
+        Result.Err err ->
             ( Model (Error <| "Error decoding the init config: " ++ errorToString err) (APIConfig "" "")
             , Cmd.none
             )
@@ -226,17 +230,17 @@ parseTokenFromFragment : List String -> Result FragmentError String
 parseTokenFromFragment segments =
     case segments of
         [] ->
-            Err "No fragment segments to get token from"
+            Result.Err "No fragment segments to get token from"
 
         [ tokenKey, token ] ->
             if tokenKey == "token" then
                 Ok token
 
             else
-                Err "First key of first fragment pair was not 'token'"
+                Result.Err "First key of first fragment pair was not 'token'"
 
         _ ->
-            Err "Fragments were not in expected format"
+            Result.Err "Fragments were not in expected format"
 
 
 type Msg
@@ -302,7 +306,7 @@ authorizedRuntimeUpdate msg runtime =
         ListsReceived result ->
             (\( state, cmd ) -> ( updateAuthRuntimeState runtime state, cmd )) <|
                 case result of
-                    Err httpErr ->
+                    Result.Err httpErr ->
                         ( ListsGetError <| "Error getting boards: " ++ httpErrToString httpErr
                         , Cmd.none
                         )
@@ -355,7 +359,7 @@ listStateUpdate listMsg listId listState =
             case listState of
                 GettingListCards ->
                     case result of
-                        Err httpErr ->
+                        Result.Err httpErr ->
                             ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr
                             , \_ -> Cmd.none
                             )
@@ -367,7 +371,7 @@ listStateUpdate listMsg listId listState =
 
                 Items _ ->
                     case result of
-                        Err httpErr ->
+                        Result.Err httpErr ->
                             ( CardsGetError <| "Error getting cards: " ++ httpErrToString httpErr
                             , \_ -> Cmd.none
                             )
@@ -393,7 +397,7 @@ listStateUpdate listMsg listId listState =
                             , \_ -> Cmd.none
                             )
 
-                        Err error ->
+                        Result.Err error ->
                             ( ChecklistsGetError <| httpErrToString error, \_ -> Cmd.none )
 
                 _ ->
@@ -411,7 +415,7 @@ listStateUpdate listMsg listId listState =
                             , \credentials -> getChecklists credentials cardId
                             )
 
-                        Err error ->
+                        Result.Err error ->
                             ( MarkCheckItemDoneError <| httpErrToString error, \_ -> Cmd.none )
 
                 _ ->
@@ -419,7 +423,7 @@ listStateUpdate listMsg listId listState =
 
         MoveProjectToDoneListResult _ result ->
             case result of
-                Err error ->
+                Result.Err error ->
                     ( MoveItemToDoneListError <| httpErrToString error
                     , \_ -> Cmd.none
                     )
@@ -803,16 +807,18 @@ viewAuthorized runtime =
 
 
 maybeNextActionsSortValue : NextActionsModel -> Float
-maybeNextActionsSortValue nasRes =
-    case nasRes of
-        NoActionsChecklists ->
-            1
+maybeNextActionsSortValue model =
+    case model of
+        Err errModel ->
+            case errModel of
+                NoActionsChecklists ->
+                    1
 
-        TooManyActionsChecklists _ ->
-            2
+                TooManyActionsChecklists _ ->
+                    2
 
-        NoChecklists ->
-            3
+                NoChecklists ->
+                    3
 
         NextActions nas ->
             case nas of
@@ -833,16 +839,18 @@ maybeNextActionsSortValue nasRes =
 
 
 projectCard : NextActionsModel -> Card -> Maybe String -> List (Html Msg)
-projectCard result card maybeDoneListId =
-    case result of
-        NoChecklists ->
-            [ span (onClick <| GoToProject card) <| [ text "️😖 no lists" ] ]
+projectCard model card maybeDoneListId =
+    case model of
+        Err errModel ->
+            case errModel of
+                NoChecklists ->
+                    [ span (onClick <| GoToProject card) <| [ text "️😖 no lists" ] ]
 
-        NoActionsChecklists ->
-            [ span (onClick <| GoToProject card) <| [ text "🧐 no actions list" ] ]
+                NoActionsChecklists ->
+                    [ span (onClick <| GoToProject card) <| [ text "🧐 no actions list" ] ]
 
-        TooManyActionsChecklists names ->
-            [ span (onClick <| GoToProject card) <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
+                TooManyActionsChecklists names ->
+                    [ span (onClick <| GoToProject card) <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
 
         NextActions nas ->
             case nas of
@@ -867,12 +875,12 @@ projectCard result card maybeDoneListId =
                     [ div [ class "cardBodyWithButtons" ] <|
                         bodyWithButtons
                             card
-                            [ text "\u{1F92A} complete!" ]
+                            [ text "🤪 complete!" ]
                             (maybeDoneListId |> Maybe.map (\id -> [ moveProjectToDoneListButton card id ]) |> Maybe.withDefault [])
                     ]
 
                 EmptyList ->
-                    [ span (onClick <| GoToProject card) <| [ text <| "\u{1F9D0} actions list has no items" ] ]
+                    [ span (onClick <| GoToProject card) <| [ text <| "🧐 actions list has no items" ] ]
 
         Loading ->
             [ span (onClick <| GoToProject card) <| [ text "⏳ loading..." ] ]
