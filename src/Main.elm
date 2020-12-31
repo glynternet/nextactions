@@ -94,13 +94,20 @@ type alias Items =
     Dict String ( Card, NextActionsModel )
 
 
+type alias GroupedItems =
+    { errors : List ( Card, NextActionsModelErr )
+    , oks : List ( Card, NextActions )
+    , loading : List Card
+    }
+
+
 type NextActionsModel
     = NextActions NextActions
     | Loading
-    | Err NextActionModelErr
+    | Err NextActionsModelErr
 
 
-type NextActionModelErr
+type NextActionsModelErr
     = NoChecklists
     | NoActionsChecklists
     | TooManyActionsChecklists (List String)
@@ -779,11 +786,26 @@ viewAuthorized runtime =
                     [ text err ]
 
                 Items items ->
-                    Dict.values items
-                        |> List.sortBy
-                            (\( _, nextActionsResult ) -> maybeNextActionsSortValue nextActionsResult)
-                        |> List.map
-                            (\item -> projectCard item listState.doneListId)
+                    groupedItems items
+                        |> (\gis ->
+                                [ if List.length gis.errors > 0 then
+                                    Just <| projectGroup "Errors" <| (gis.errors |> List.map (\( card, err ) -> projectCard card (projectCardBodyErr err card)))
+
+                                  else
+                                    Nothing
+                                , if List.length gis.loading > 0 then
+                                    Just <| projectGroup "Loading" <| (gis.loading |> List.map (\card -> projectCard card (projectCardBodyLoading card)))
+
+                                  else
+                                    Nothing
+                                , if List.length gis.oks > 0 then
+                                    Just <| projectGroup "Projects" <| (gis.oks |> List.map (\( card, nas ) -> projectCard card (projectCardBodyNextActions nas card listState.doneListId)))
+
+                                  else
+                                    Nothing
+                                ]
+                                    |> List.filterMap identity
+                           )
 
                 MoveItemToDoneListError err ->
                     [ text err ]
@@ -795,40 +817,59 @@ viewAuthorized runtime =
                     [ text err ]
 
 
-maybeNextActionsSortValue : NextActionsModel -> Float
-maybeNextActionsSortValue model =
-    case model of
-        Err errModel ->
-            case errModel of
-                NoActionsChecklists ->
-                    1
+groupedItems : Items -> GroupedItems
+groupedItems =
+    Dict.foldl
+        (\k ( card, model ) accum ->
+            case model of
+                NextActions naModel ->
+                    { accum | oks = ( card, naModel ) :: accum.oks |> List.sortBy (Tuple.second >> nextActionsSortValue) }
 
-                TooManyActionsChecklists _ ->
-                    2
+                Loading ->
+                    { accum | loading = card :: accum.loading }
 
-                NoChecklists ->
-                    3
-
-        NextActions nas ->
-            case nas of
-                EmptyList ->
-                    4
-
-                Complete ->
-                    5
-
-                InProgress incompleteNas ->
-                    6 + (1 - completeNormalisedPercent incompleteNas)
-
-                Backlogged _ ->
-                    7
-
-        Loading ->
-            8
+                Err err ->
+                    { accum | errors = ( card, err ) :: accum.errors |> List.sortBy (Tuple.second >> nextActionsErrSortValue) }
+        )
+        (GroupedItems [] [] [])
 
 
-projectCard : ( Card, NextActionsModel ) -> Maybe String -> Html Msg
-projectCard ( card, res ) doneListId =
+nextActionsErrSortValue : NextActionsModelErr -> Float
+nextActionsErrSortValue errModel =
+    case errModel of
+        NoActionsChecklists ->
+            1
+
+        TooManyActionsChecklists _ ->
+            2
+
+        NoChecklists ->
+            3
+
+
+nextActionsSortValue : NextActions -> Float
+nextActionsSortValue nas =
+    case nas of
+        EmptyList ->
+            4
+
+        Complete ->
+            5
+
+        InProgress incompleteNas ->
+            6 + (1 - completeNormalisedPercent incompleteNas)
+
+        Backlogged _ ->
+            7
+
+
+projectGroup : String -> List (Html Msg) -> Html Msg
+projectGroup name content =
+    div [ class "projectGroup" ] (span [ class "groupTitle" ] [ text name ] :: content)
+
+
+projectCard : Card -> List (Html Msg) -> Html Msg
+projectCard card body =
     div
         [ class "projectCard" ]
     <|
@@ -838,55 +879,57 @@ projectCard ( card, res ) doneListId =
                 [ text <| card.name ]
             , br [] []
             ]
-            (projectCardBody res card doneListId)
+            body
 
 
-projectCardBody : NextActionsModel -> Card -> Maybe String -> List (Html Msg)
-projectCardBody model card maybeDoneListId =
-    case model of
-        Err errModel ->
-            case errModel of
-                NoChecklists ->
-                    [ span (onClick <| GoToProject card) <| [ text "️😖 no lists" ] ]
+projectCardBodyErr : NextActionsModelErr -> Card -> List (Html Msg)
+projectCardBodyErr err card =
+    case err of
+        NoChecklists ->
+            [ span (onClick <| GoToProject card) <| [ text "️😖 no lists" ] ]
 
-                NoActionsChecklists ->
-                    [ span (onClick <| GoToProject card) <| [ text "🧐 no actions list" ] ]
+        NoActionsChecklists ->
+            [ span (onClick <| GoToProject card) <| [ text "🧐 no actions list" ] ]
 
-                TooManyActionsChecklists names ->
-                    [ span (onClick <| GoToProject card) <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
+        TooManyActionsChecklists names ->
+            [ span (onClick <| GoToProject card) <| [ text <| "😕 more than one actions list: " ++ String.join ", " names ] ]
 
-        NextActions nas ->
-            case nas of
-                InProgress incompleteActions ->
-                    [ div [ class "cardBodyWithButtons" ] <|
-                        bodyWithButtons
-                            card
-                            [ text <| incompleteActions.nextAction.name, actionsSmallTag incompleteActions ]
-                            [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
-                    , Progress.progress [ Progress.value <| completePercent incompleteActions ]
-                    ]
 
-                Backlogged incompleteActions ->
-                    [ div [ class "cardBodyWithButtons" ] <|
-                        bodyWithButtons
-                            card
-                            [ text <| "😌 not started: " ++ incompleteActions.nextAction.name, actionsSmallTag incompleteActions ]
-                            [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
-                    ]
+projectCardBodyNextActions : NextActions -> Card -> Maybe String -> List (Html Msg)
+projectCardBodyNextActions nas card maybeDoneListId =
+    case nas of
+        InProgress incompleteActions ->
+            [ div [ class "cardBodyWithButtons" ] <|
+                bodyWithButtons
+                    card
+                    [ text <| incompleteActions.nextAction.name, actionsSmallTag incompleteActions ]
+                    [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
+            , Progress.progress [ Progress.value <| completePercent incompleteActions ]
+            ]
 
-                Complete ->
-                    [ div [ class "cardBodyWithButtons" ] <|
-                        bodyWithButtons
-                            card
-                            [ text "🤪 complete!" ]
-                            (maybeDoneListId |> Maybe.map (\id -> [ moveProjectToDoneListButton card id ]) |> Maybe.withDefault [])
-                    ]
+        Backlogged incompleteActions ->
+            [ div [ class "cardBodyWithButtons" ] <|
+                bodyWithButtons
+                    card
+                    [ text <| "😌 not started: " ++ incompleteActions.nextAction.name, actionsSmallTag incompleteActions ]
+                    [ markCheckItemDoneButton card incompleteActions.nextAction (markCheckitemDoneButtonText incompleteActions) ]
+            ]
 
-                EmptyList ->
-                    [ span (onClick <| GoToProject card) <| [ text <| "🧐 actions list has no items" ] ]
+        Complete ->
+            [ div [ class "cardBodyWithButtons" ] <|
+                bodyWithButtons
+                    card
+                    [ text "🤪 complete!" ]
+                    (maybeDoneListId |> Maybe.map (\id -> [ moveProjectToDoneListButton card id ]) |> Maybe.withDefault [])
+            ]
 
-        Loading ->
-            [ span (onClick <| GoToProject card) <| [ text "⏳ loading..." ] ]
+        EmptyList ->
+            [ span (onClick <| GoToProject card) <| [ text <| "🧐 actions list has no items" ] ]
+
+
+projectCardBodyLoading : Card -> List (Html Msg)
+projectCardBodyLoading card =
+    [ span (onClick <| GoToProject card) <| [ text "⏳ loading..." ] ]
 
 
 actionsSmallTag : Actions -> Html Msg
