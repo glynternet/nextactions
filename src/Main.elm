@@ -13,6 +13,7 @@ import List.Extra
 import Ports
 import Result.Extra
 import String exposing (join)
+import Time exposing (every)
 import Url exposing (Protocol(..))
 
 
@@ -29,7 +30,7 @@ main =
         { init = init
         , view = view
         , update = update
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         , onUrlRequest = \_ -> Never
         , onUrlChange = \_ -> Never
         }
@@ -252,6 +253,7 @@ parseTokenFromFragment segments =
 
 type Msg
     = Never
+    | BackgroundPoll
     | Authorize APIConfig
     | GetLists String
     | ListsReceived (Result Http.Error Lists)
@@ -357,6 +359,19 @@ authorizedRuntimeUpdate msg runtime =
             --TODO: should probably show that there has been an error here
             --TODO: remove stored token
             ( Unauthorized, Cmd.none )
+
+        BackgroundPoll ->
+            case runtime.state of
+                ListState listState ->
+                    case listState.state of
+                        Items _ ->
+                            ( Authorized runtime, getCards runtime.credentials listState.listId )
+
+                        _ ->
+                            ( Authorized runtime, Cmd.none )
+
+                _ ->
+                    ( Authorized runtime, Cmd.none )
 
 
 listStateUpdate : ListMsg -> String -> ListState -> ( ListState, RequestCredentials -> Cmd Msg )
@@ -721,6 +736,14 @@ checklistItemsToNextActions items =
                     else
                         InProgress <|
                             Actions first itemsLength incompletesLength
+
+
+
+-- SUBSCRIPTIONS
+
+
+subscriptions model =
+    Time.every 60000 (\_ -> Debug.log "BackgroundPoll" BackgroundPoll)
 
 
 
