@@ -783,18 +783,7 @@ viewAuthorized runtime =
                         |> List.sortBy
                             (\( _, nextActionsResult ) -> maybeNextActionsSortValue nextActionsResult)
                         |> List.map
-                            (\( card, res ) ->
-                                div
-                                    [ class "projectCard" ]
-                                <|
-                                    List.append
-                                        [ span
-                                            (class "projectTitle" :: (onClick <| GoToProject card))
-                                            [ text <| card.name ]
-                                        , br [] []
-                                        ]
-                                        (projectCard res card listState.doneListId)
-                            )
+                            (\item -> projectCard item listState.doneListId)
 
                 MoveItemToDoneListError err ->
                     [ text err ]
@@ -838,8 +827,22 @@ maybeNextActionsSortValue model =
             8
 
 
-projectCard : NextActionsModel -> Card -> Maybe String -> List (Html Msg)
-projectCard model card maybeDoneListId =
+projectCard : ( Card, NextActionsModel ) -> Maybe String -> Html Msg
+projectCard ( card, res ) doneListId =
+    div
+        [ class "projectCard" ]
+    <|
+        List.append
+            [ span
+                (class "projectTitle" :: (onClick <| GoToProject card))
+                [ text <| card.name ]
+            , br [] []
+            ]
+            (projectCardBody res card doneListId)
+
+
+projectCardBody : NextActionsModel -> Card -> Maybe String -> List (Html Msg)
+projectCardBody model card maybeDoneListId =
     case model of
         Err errModel ->
             case errModel of
