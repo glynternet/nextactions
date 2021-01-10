@@ -12,8 +12,8 @@ import Json.Decode as Decode exposing (Decoder, Value, decodeValue, errorToStrin
 import List.Extra
 import Ports
 import Result.Extra
-import String exposing (join)
-import Time exposing (every)
+import String
+import Time
 import Url exposing (Protocol(..))
 
 
@@ -477,7 +477,7 @@ navigateToTrelloAuthorisePage apiConfig =
     Browser.Navigation.load
         (apiBaseUrl
             ++ "/authorize?"
-            ++ ([ ( "expiration", "1day" )
+            ++ ([ ( "expiration", "7day" )
                 , ( "name", "Next!" )
                 , ( "scope", "read,write" )
                 , ( "response_type", "token" )
@@ -485,7 +485,7 @@ navigateToTrelloAuthorisePage apiConfig =
                 , ( "return_url", apiConfig.loginRedirect )
                 ]
                     |> List.map (\( k, v ) -> k ++ "=" ++ v)
-                    |> join "&"
+                    |> String.join "&"
                )
         )
 
